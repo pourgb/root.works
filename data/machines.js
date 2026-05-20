@@ -2138,33 +2138,29 @@ export const MACHINE_DEFS = {
         acceptsItem: (m, itm) => ['locomotive', 'cargo_wagon', 'fluid_wagon', 'coal'].includes(itm),
         isWorking: function (m) { return (m.energy || 0) >= 10; },
         updateOverride: function (m, r, dt) {
-            // Auto-refuel: every second, find a train on an adjacent rail tile and transfer coal
+            // Auto-refuel: every second, find any train inside or adjacent to the depot and transfer coal
+            m.timer = (m.timer || 0) + dt;
             if (m.timer >= 1.0) {
                 m.timer = 0;
                 let coalAvail = m.inv['coal'] || 0;
                 if (coalAvail <= 0) return;
-                if (!window.TrainSystem || !window.mapPipes || !window.mapPipes['rail']) return;
-                let railMap = window.mapPipes['rail'];
-                let WORLD_SIZE = window.getWorldSize ? window.getWorldSize() : 1500;
-                // Check all tiles adjacent to the depot footprint for a rail tile
-                for (let dy = -1; dy <= r.h; dy++) {
-                    for (let dx = -1; dx <= r.w; dx++) {
-                        if (dx >= 0 && dx < r.w && dy >= 0 && dy < r.h) continue;
-                        let wx = m.x + dx, wy = m.y + dy;
-                        if (wx < 0 || wy < 0 || wx >= WORLD_SIZE || wy >= WORLD_SIZE) continue;
-                        if (railMap[wy * WORLD_SIZE + wx] === 0) continue;
-                        // Rail tile found — find a train sitting here
-                        for (let train of window.TrainSystem.trains) {
-                            if (Math.round(train.x) === wx && Math.round(train.y) === wy) {
-                                let need = train.maxFuel - train.fuel;
-                                if (need > 0) {
-                                    let transfer = Math.min(coalAvail, Math.ceil(need), 10);
-                                    train.fuel = Math.min(train.maxFuel, train.fuel + transfer);
-                                    m.inv['coal'] -= transfer;
-                                    if (m.inv['coal'] <= 0) delete m.inv['coal'];
-                                }
+                if (!window.TrainSystem || !window.TrainSystem.trains) return;
+
+                for (let train of window.TrainSystem.trains) {
+                    let tx = Math.round(train.x);
+                    let ty = Math.round(train.y);
+                    // Check if train is inside or directly adjacent to the depot footprint
+                    if (tx >= m.x - 1 && tx <= m.x + r.w && ty >= m.y - 1 && ty <= m.y + r.h) {
+                        let need = train.maxFuel - train.fuel;
+                        if (need > 0) {
+                            let transfer = Math.min(coalAvail, Math.ceil(need), 10);
+                            train.fuel = Math.min(train.maxFuel, train.fuel + transfer);
+                            m.inv['coal'] -= transfer;
+                            if (m.inv['coal'] <= 0) {
+                                delete m.inv['coal'];
                                 break;
                             }
+                            coalAvail -= transfer;
                         }
                     }
                 }

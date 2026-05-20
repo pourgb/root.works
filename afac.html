@@ -293,6 +293,49 @@
                 </select>
             </div>
         </div>
+        <div id="machine-train-controls" style="display: none; margin-top: 15px; border-top: 1px solid #ccc; padding-top: 10px;">
+            <div id="train-depot-controls" style="display: none;">
+                <div class="pane" style="margin-bottom: 10px;">
+                    <h3>Assemble & Deploy Train</h3>
+                    <div style="display: flex; gap: 10px; align-items: center; font-size: 13px;">
+                        <label>Cargo Wagons: <input type="number" id="depot-cargo-count" value="1" min="0" max="5" style="width: 40px; padding: 2px;"></label>
+                        <label>Fluid Wagons: <input type="number" id="depot-fluid-count" value="0" min="0" max="5" style="width: 40px; padding: 2px;"></label>
+                        <button class="btn-transfer" onclick="window.assembleAndDeployTrain()">Deploy Train</button>
+                    </div>
+                </div>
+                <div class="pane">
+                    <h3>Active Trains</h3>
+                    <div id="depot-trains-list" style="max-height: 200px; overflow-y: auto; font-size: 13px;">
+                    </div>
+                </div>
+                <div class="pane" id="depot-schedule-panel" style="display: none; margin-top: 10px; border-color: #7b1fa2; background: #f3e5f5;">
+                    <h3 style="border-bottom-color: #ab47bc;">Configure Schedule for <span id="schedule-train-name"></span></h3>
+                    <div style="margin-bottom: 8px; display: flex; flex-direction: column; gap: 4px;">
+                        <div>
+                            <strong>Train Name:</strong>
+                            <input type="text" id="schedule-train-rename-input" style="width: 150px; padding: 2px; font-size: 12px;">
+                            <button class="btn-transfer" onclick="window.renameActiveTrain()">Rename</button>
+                        </div>
+                        <div style="margin-top: 6px;">
+                            <strong>Add Stop:</strong>
+                            <select id="schedule-station-select" style="padding: 2px; font-size: 12px;"></select>
+                            <select id="schedule-condition-select" onchange="window.onScheduleConditionChange()" style="padding: 2px; font-size: 12px;">
+                                <option value="wait_full">Wagons Full</option>
+                                <option value="wait_empty">Wagons Empty</option>
+                                <option value="wait_timer">Time Elapsed</option>
+                                <option value="wait_inactivity">Inactivity</option>
+                            </select>
+                            <input type="number" id="schedule-value-input" value="10" min="1" style="width: 50px; padding: 2px; font-size: 12px; display: none;">
+                            <button class="btn-transfer" onclick="window.addScheduleStop()">Add</button>
+                        </div>
+                    </div>
+                    <div id="schedule-stops-list" style="max-height: 120px; overflow-y: auto; margin-bottom: 8px;"></div>
+                    <button class="btn-transfer" style="background: #ab47bc; color: white; border: none;" onclick="window.closeSchedulePanel()">Done</button>
+                </div>
+            </div>
+            <div id="train-stop-controls" style="display: none;">
+            </div>
+        </div>
         <br>
         <div class="ui-row">Press <span class="key">ESC</span> to close</div>
     </div>
@@ -332,6 +375,7 @@
         import { AgentController } from './data/agent.js';
         import { AgentWrapper } from './data/agent_wrapper.js';
         import { PLCLexer, PLCParser, PLCInterpreter } from './js/plc_interpreter.js';
+        import { TrainSystem } from './js/train_system.js';
 
         "use strict";
         let isAgentMode = false; window.isAgentMode = false;
@@ -372,6 +416,7 @@
             }
 
             // Initialize Agent with direct map access
+            window.mapPipes = mapPipes;
             window.agent = new AgentController(worldMap, 1500, mapPipes);
             window.agentWrapper = new AgentWrapper(window.agent);
 
@@ -381,6 +426,198 @@
             window.PLCLexer = PLCLexer;
             window.PLCParser = PLCParser;
             window.plcInterpreter = new PLCInterpreter();
+            window.TrainSystem = TrainSystem;
+
+            window.activeScheduleTrainId = null;
+
+            window.renderScheduleStops = function() {
+                if (window.activeScheduleTrainId == null) return;
+                let train = TrainSystem.trains.find(t => t.id === window.activeScheduleTrainId);
+                if (!train) return;
+
+                let html = '';
+                train.schedule.forEach((stop, idx) => {
+                    let condText = '';
+                    if (stop.condition === 'wait_full') condText = 'until full';
+                    else if (stop.condition === 'wait_empty') condText = 'until empty';
+                    else if (stop.condition === 'wait_timer') condText = `for ${stop.value}s`;
+                    else if (stop.condition === 'wait_inactivity') condText = `for ${stop.value}s inactivity`;
+
+                    html += `
+                        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; margin-bottom: 4px; padding: 2px 4px; background: #fff; border: 1px solid #ddd; border-radius: 3px; color: #333;">
+                            <span>${idx + 1}. <b>${stop.stationName}</b> (${condText})</span>
+                            <button class="btn-transfer" style="background: #ffebee; color: #c62828; border-color: #ffcdd2; padding: 1px 6px;" onclick="window.removeScheduleStop(${idx})">✖</button>
+                        </div>
+                    `;
+                });
+                document.getElementById('schedule-stops-list').innerHTML = html || '<em style="color:#666; font-size:12px;">No stops configured</em>';
+            };
+
+            window.assembleAndDeployTrain = function() {
+                if (!currentOpenMachine || currentOpenMachine.type !== 'machine_train_depot') return;
+                
+                let depotCoal = currentOpenMachine.inv['coal'] || 0;
+                if (depotCoal <= 0) {
+                    alert("Cannot deploy train: Depot has no coal for initial fuel! Put coal in the Depot inventory first.");
+                    return;
+                }
+
+                let cargoCount = parseInt(document.getElementById('depot-cargo-count').value) || 0;
+                let fluidCount = parseInt(document.getElementById('depot-fluid-count').value) || 0;
+                
+                if (cargoCount < 0 || fluidCount < 0) return;
+                if (cargoCount === 0 && fluidCount === 0) {
+                    alert("A train must have at least one wagon!");
+                    return;
+                }
+
+                let wagons = [];
+                for (let i = 0; i < cargoCount; i++) wagons.push({ type: 'cargo', inv: {}, maxStack: 500 });
+                for (let i = 0; i < fluidCount; i++) wagons.push({ type: 'fluid', inv: {}, maxStack: 2000 });
+
+                let newTrain = TrainSystem.createTrain(currentOpenMachine.x, currentOpenMachine.y, wagons);
+                if (newTrain) {
+                    let fuelToTake = Math.min(newTrain.maxFuel, depotCoal);
+                    newTrain.fuel = fuelToTake;
+                    currentOpenMachine.inv['coal'] -= fuelToTake;
+                    if (currentOpenMachine.inv['coal'] <= 0) delete currentOpenMachine.inv['coal'];
+
+                    floatText(currentOpenMachine.x, currentOpenMachine.y, `Deployed ${newTrain.name} with ${Math.floor(fuelToTake)} fuel!`, "#ffd700");
+                    updateMachineUI();
+                } else {
+                    alert("Cannot deploy train. Depot must be placed on track!");
+                }
+            };
+
+            window.openSchedulePanel = function(trainId) {
+                window.activeScheduleTrainId = trainId;
+                let train = TrainSystem.trains.find(t => t.id === trainId);
+                if (!train) return;
+
+                document.getElementById('schedule-train-name').innerText = train.name;
+                document.getElementById('schedule-train-rename-input').value = train.name;
+
+                // Populate stations list
+                let stationSelect = document.getElementById('schedule-station-select');
+                stationSelect.innerHTML = '';
+                
+                let stops = [];
+                for (let m of activeMachines) {
+                    if (m && m.type === 'machine_train_stop') {
+                        let sName = m.stationName || `Station_${m.id}`;
+                        stops.push(sName);
+                    }
+                }
+                stops = Array.from(new Set(stops)).sort();
+                if (stops.length === 0) {
+                    let opt = document.createElement('option');
+                    opt.value = '';
+                    opt.innerText = '-- No Stations Found --';
+                    stationSelect.appendChild(opt);
+                } else {
+                    stops.forEach(s => {
+                        let opt = document.createElement('option');
+                        opt.value = s;
+                        opt.innerText = s;
+                        stationSelect.appendChild(opt);
+                    });
+                }
+
+                document.getElementById('depot-schedule-panel').style.display = 'block';
+                window.onScheduleConditionChange();
+                window.renderScheduleStops();
+            };
+
+            window.closeSchedulePanel = function() {
+                window.activeScheduleTrainId = null;
+                document.getElementById('depot-schedule-panel').style.display = 'none';
+                updateMachineUI();
+            };
+
+            window.onScheduleConditionChange = function() {
+                let cond = document.getElementById('schedule-condition-select').value;
+                let valInput = document.getElementById('schedule-value-input');
+                if (cond === 'wait_timer' || cond === 'wait_inactivity') {
+                    valInput.style.display = 'inline-block';
+                } else {
+                    valInput.style.display = 'none';
+                }
+            };
+
+            window.addScheduleStop = function() {
+                if (window.activeScheduleTrainId == null) return;
+                let train = TrainSystem.trains.find(t => t.id === window.activeScheduleTrainId);
+                if (!train) return;
+
+                let stationName = document.getElementById('schedule-station-select').value;
+                if (!stationName) {
+                    alert("Please select or create a train stop first!");
+                    return;
+                }
+
+                let condition = document.getElementById('schedule-condition-select').value;
+                let value = parseInt(document.getElementById('schedule-value-input').value) || 10;
+
+                train.schedule.push({ stationName, condition, value });
+                window.renderScheduleStops();
+            };
+
+            window.removeScheduleStop = function(idx) {
+                if (window.activeScheduleTrainId == null) return;
+                let train = TrainSystem.trains.find(t => t.id === window.activeScheduleTrainId);
+                if (!train) return;
+
+                train.schedule.splice(idx, 1);
+                if (train.scheduleIdx >= train.schedule.length) {
+                    train.scheduleIdx = 0;
+                }
+                window.renderScheduleStops();
+            };
+
+            window.renameActiveTrain = function() {
+                if (window.activeScheduleTrainId == null) return;
+                let train = TrainSystem.trains.find(t => t.id === window.activeScheduleTrainId);
+                if (!train) return;
+
+                let newName = document.getElementById('schedule-train-rename-input').value.trim();
+                if (newName) {
+                    train.name = newName;
+                    document.getElementById('schedule-train-name').innerText = newName;
+                    updateMachineUI();
+                }
+            };
+
+            window.decommissionTrain = function(trainId) {
+                if (!confirm("Are you sure you want to scrap this train? This will destroy all cargo and wagons!")) return;
+                let idx = TrainSystem.trains.findIndex(t => t.id === trainId);
+                if (idx !== -1) {
+                    TrainSystem.trains.splice(idx, 1);
+                    updateMachineUI();
+                }
+            };
+
+            window.updateStationName = function() {
+                if (!currentOpenMachine || currentOpenMachine.type !== 'machine_train_stop') return;
+                let newName = document.getElementById('station-name-input').value.trim();
+                if (!newName) return;
+
+                // Validate uniqueness
+                let duplicate = false;
+                for (let m of activeMachines) {
+                    if (m && m.type === 'machine_train_stop' && m.id !== currentOpenMachine.id && m.stationName === newName) {
+                        duplicate = true;
+                        break;
+                    }
+                }
+                if (duplicate) {
+                    alert("A station with that name already exists!");
+                    return;
+                }
+
+                currentOpenMachine.stationName = newName;
+                floatText(currentOpenMachine.x, currentOpenMachine.y, `Station renamed to ${newName}`, "#ff9800");
+                updateMachineUI();
+            };
 
             initGame();
         }
@@ -694,7 +931,8 @@
                 worldMap: rleEncode(worldMap),
                 moistureMap: rleEncode(moistureMap),
                 cropProgress: rleEncode(cropProgress),
-                pipes: pipesToSave
+                pipes: pipesToSave,
+                trains: window.TrainSystem ? window.TrainSystem.serialize() : []
             };
             return btoa(JSON.stringify(save));
         };
@@ -1000,7 +1238,8 @@
                 worldMap: rleEncode(worldMap),
                 moistureMap: rleEncode(moistureMap),
                 cropProgress: rleEncode(cropProgress),
-                pipes: pipesToSave
+                pipes: pipesToSave,
+                trains: window.TrainSystem ? window.TrainSystem.serialize() : []
             };
 
             const saveJson = JSON.stringify(save);
@@ -1125,6 +1364,12 @@
                 dataGridNeedsUpdate = true;
                 updateRouteMap();
                 if (gameState.rebuild_monster_paths) gameState.rebuild_monster_paths(player.x, player.y);
+
+                if (save.trains && window.TrainSystem) {
+                    window.TrainSystem.deserialize(save.trains);
+                } else if (window.TrainSystem) {
+                    window.TrainSystem.trains = [];
+                }
 
                 rebindWasmViews(); // final rebind after all WASM calls
 
@@ -1783,7 +2028,28 @@
         function toggleGuide() { const v = !guideVisible; closeAllMenus(); guideVisible = v; document.getElementById('guide-ui').style.display = v ? 'block' : 'none'; }
         function toggleInventory() { const v = !inventoryVisible; closeAllMenus(); inventoryVisible = v; document.getElementById('inventory-ui').style.display = v ? 'block' : 'none'; if (v) updateInventoryUI(); }
         function toggleCrafting() { const v = !craftingVisible; closeAllMenus(); craftingVisible = v; document.getElementById('crafting-ui').style.display = v ? 'block' : 'none'; if (v) { document.getElementById('crafting-title').innerText = currentCraftingEnv === 'table' ? "Advanced Crafting Table" : "Hand Crafting"; updateCraftingUI(); } }
-        function toggleMachineUI(m) { const v = m !== null; closeAllMenus(); machineUiVisible = v; document.getElementById('machine-ui').style.display = v ? 'block' : 'none'; currentOpenMachine = m; if (v) updateMachineUI(); }
+        function toggleMachineUI(m) {
+            const v = m !== null;
+            closeAllMenus();
+            machineUiVisible = v;
+            document.getElementById('machine-ui').style.display = v ? 'block' : 'none';
+            currentOpenMachine = m;
+            if (v) {
+                const trainCtrl = document.getElementById('machine-train-controls');
+                if (trainCtrl) {
+                    if (m.type === 'machine_train_stop' || m.type === 'machine_train_depot') {
+                        trainCtrl.style.display = 'block';
+                    } else {
+                        trainCtrl.style.display = 'none';
+                    }
+                }
+                let schedulePanel = document.getElementById('depot-schedule-panel');
+                if (schedulePanel) schedulePanel.style.display = 'none';
+                window.activeScheduleTrainId = null;
+
+                updateMachineUI();
+            }
+        }
         function toggleCdhUI(m) {
             const v = m !== null; closeAllMenus();
             machineUiVisible = v; // Hijack 'machineUiVisible' to utilize E/ESC closing logic
@@ -2331,6 +2597,91 @@
                     document.getElementById('filter-mode').value = currentOpenMachine.filters.blacklist ? 'black' : 'white';
                 }
             } else filterUi.style.display = 'none';
+
+            // Train system UI updates
+            const trainCtrl = document.getElementById('machine-train-controls');
+            if (trainCtrl) {
+                const depotCtrl = document.getElementById('train-depot-controls');
+                const stopCtrl = document.getElementById('train-stop-controls');
+
+                if (currentOpenMachine.type === 'machine_train_stop') {
+                    trainCtrl.style.display = 'block';
+                    depotCtrl.style.display = 'none';
+                    stopCtrl.style.display = 'block';
+
+                    let stationName = currentOpenMachine.stationName || `Station_${currentOpenMachine.id}`;
+                    if (!currentOpenMachine.stationName) {
+                        currentOpenMachine.stationName = stationName;
+                    }
+
+                    let trainStatusHtml = '<em>No train currently docked</em>';
+                    if (currentOpenMachine.dockedTrainId != null && window.TrainSystem && window.TrainSystem.trains) {
+                        let dockedTrain = window.TrainSystem.trains.find(t => t.id === currentOpenMachine.dockedTrainId);
+                        if (dockedTrain) {
+                            let cargoText = '';
+                            if (window.TrainSystem.getTrainCargo) {
+                                let cargo = window.TrainSystem.getTrainCargo(dockedTrain);
+                                cargoText = Object.entries(cargo).map(([k, v]) => `<div>${v}x ${k.replace(/_/g, ' ').toUpperCase()}</div>`).join('');
+                            }
+                            trainStatusHtml = `
+                                <strong>Docked Train:</strong> ${dockedTrain.name}<br>
+                                <strong>State:</strong> ${dockedTrain.state.toUpperCase()}<br>
+                                <strong>Fuel:</strong> ${Math.floor(dockedTrain.fuel)} / ${dockedTrain.maxFuel}<br>
+                                <strong>Wagons:</strong> ${dockedTrain.wagons.length} (${dockedTrain.wagons.filter(w => w.type === 'cargo').length} Cargo, ${dockedTrain.wagons.filter(w => w.type === 'fluid').length} Fluid)<br>
+                                <strong>Cargo:</strong><br>
+                                <div style="padding-left:10px; font-size:12px;">${cargoText || 'Empty'}</div>
+                            `;
+                        }
+                    }
+
+                    stopCtrl.innerHTML = `
+                        <div class="pane" style="margin-bottom: 10px; border-color: #ff9800; background: #fff8e1;">
+                            <h3>Train Stop Details</h3>
+                            <div style="margin-bottom: 8px; display: flex; gap: 6px; align-items: center;">
+                                <strong>Name:</strong>
+                                <input type="text" id="station-name-input" value="${stationName}" style="width: 150px; padding: 2px; font-size: 12px; background: #fff; color: #000; border: 1px solid #aaa;">
+                                <button class="btn-transfer" onclick="window.updateStationName()">Update</button>
+                            </div>
+                            <div style="font-size: 13px; line-height: 1.4;">
+                                ${trainStatusHtml}
+                            </div>
+                        </div>
+                    `;
+                } else if (currentOpenMachine.type === 'machine_train_depot') {
+                    trainCtrl.style.display = 'block';
+                    depotCtrl.style.display = 'block';
+                    stopCtrl.style.display = 'none';
+
+                    // Update Active Trains List
+                    let trainsListHtml = '';
+                    if (window.TrainSystem && window.TrainSystem.trains) {
+                        window.TrainSystem.trains.forEach(t => {
+                            let routeText = t.schedule.length > 0 ? t.schedule.map(s => s.stationName).join(' ➔ ') : 'No Schedule';
+                            let targetText = t.state === 'traveling' ? ` (To: ${t.targetStationName || '?'})` : '';
+                            trainsListHtml += `
+                                <div style="border-bottom: 1px solid #ddd; padding: 6px 0; display: flex; justify-content: space-between; align-items: center;">
+                                    <div>
+                                        <b>${t.name}</b> <span style="font-size:11px; padding: 1px 4px; border-radius: 3px; background: #e0e0e0;">${t.state.toUpperCase()}${targetText}</span><br>
+                                        <small style="color: #666;">Fuel: ${Math.floor(t.fuel)}/${t.maxFuel} | ${t.wagons.length} Wagons | Path: ${routeText}</small>
+                                    </div>
+                                    <div style="display: flex; gap: 4px;">
+                                        <button class="btn-transfer" onclick="window.openSchedulePanel(${t.id})">Schedule</button>
+                                        <button class="btn-transfer" style="background: #ffebee; color: #c62828; border-color: #ffcdd2;" onclick="window.decommissionTrain(${t.id})">Scrap</button>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                    }
+                    document.getElementById('depot-trains-list').innerHTML = trainsListHtml || '<em>No active trains</em>';
+                    
+                    // If active schedule train ID is set, refresh the schedule view
+                    if (window.activeScheduleTrainId != null) {
+                        window.renderScheduleStops();
+                    }
+                } else {
+                    trainCtrl.style.display = 'none';
+                }
+            }
         }
 
         function transferItem(itemId, direction, amount, bufferType = 'inv') {
@@ -3476,6 +3827,7 @@
                 }
                 return totalPushed;
             }
+            if (window.TrainSystem) window.TrainSystem.tick(dt);
             updateCombat(dt);
             if (player.equippedTool === 'slingshot') {
                 document.getElementById('tool-hud').innerText = `SLINGSHOT (${inventory['rock_pellet'] || 0})`;
@@ -3666,6 +4018,40 @@
                             pushQuad('■', sX, sY - 8, ITEM_COLORS[m.drone.inv] || '#ffffff', 1.0);
                         } else if (m.type === 'machine_drone_station_farming' && m.drone.inv && m.drone.inv.wheat > 0) {
                             pushQuad('■', sX, sY - 8, '#ffeb3b', 1.0);
+                        }
+                    }
+                }
+            }
+
+            // --- TRAINS (RENDERING) ---
+            if (window.TrainSystem && window.TrainSystem.trains) {
+                for (let train of window.TrainSystem.trains) {
+                    let tX = train.x, tY = train.y;
+                    if (tX >= player.x - cols / 2 - 2 && tX <= player.x + cols / 2 + 2 && 
+                        tY >= player.y - rows / 2 - 2 && tY <= player.y + rows / 2 + 2) {
+                        
+                        let sX = (tX - player.x) * charWidth + (canvas.width / 2);
+                        let sY = (tY - player.y) * charHeight + (canvas.height / 2);
+                        pushQuad('█', sX, sY, '#ff9800', 1.0);
+                        pushQuad('T', sX, sY, '#000000', 1.0);
+                    }
+                    
+                    for (let wIdx = 0; wIdx < train.wagons.length; wIdx++) {
+                        let w = train.wagons[wIdx];
+                        let wPos = train.posHistory[wIdx];
+                        if (wPos) {
+                            let wX = wPos.x, wY = wPos.y;
+                            if (wX >= player.x - cols / 2 - 2 && wX <= player.x + cols / 2 + 2 && 
+                                wY >= player.y - rows / 2 - 2 && wY <= player.y + rows / 2 + 2) {
+                                
+                                let sX = (wX - player.x) * charWidth + (canvas.width / 2);
+                                let sY = (wY - player.y) * charHeight + (canvas.height / 2);
+                                let char = 'W';
+                                let bg = w.type === 'fluid' ? '#2196f3' : '#795548';
+                                let fg = '#ffffff';
+                                pushQuad('█', sX, sY, bg, 1.0);
+                                pushQuad(char, sX, sY, fg, 1.0);
+                            }
                         }
                     }
                 }

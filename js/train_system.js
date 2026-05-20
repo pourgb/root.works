@@ -15,13 +15,18 @@ export const TrainSystem = {
      * @param {number} fluidCount - Number of fluid wagons
      * @returns {object} The newly created train
      */
-    createTrain: function(x, y, cargoCount, fluidCount) {
+    createTrain: function(x, y, cargoCountOrWagons, fluidCount) {
         let wagons = [];
-        for (let i = 0; i < cargoCount; i++) {
-            wagons.push({ type: 'cargo', inv: {}, maxStack: 500 });
-        }
-        for (let i = 0; i < fluidCount; i++) {
-            wagons.push({ type: 'fluid', inv: {}, maxStack: 2000 });
+        if (Array.isArray(cargoCountOrWagons)) {
+            wagons = cargoCountOrWagons;
+        } else {
+            let cargoCount = cargoCountOrWagons || 0;
+            for (let i = 0; i < cargoCount; i++) {
+                wagons.push({ type: 'cargo', inv: {}, maxStack: 500 });
+            }
+            for (let i = 0; i < fluidCount; i++) {
+                wagons.push({ type: 'fluid', inv: {}, maxStack: 2000 });
+            }
         }
 
         let train = {
@@ -120,32 +125,91 @@ export const TrainSystem = {
      * Returns an array of {x,y} waypoints along rail tiles, or null if no path found.
      */
     pathfindRail: function(startX, startY, targetStationName) {
-        if (!window.mapPipes || !window.mapPipes['rail']) return null;
+        startX = Math.round(startX);
+        startY = Math.round(startY);
+        if (!window.mapPipes) {
+            console.warn("  [pathfindRail] window.mapPipes is missing!");
+            return null;
+        }
+        if (!window.mapPipes['rail']) {
+            console.warn("  [pathfindRail] window.mapPipes['rail'] is missing!");
+            return null;
+        }
         let railMap = window.mapPipes['rail'];
         let worldMap = window.getWorldMap ? window.getWorldMap() : null;
         let machines = window.getActiveMachines ? window.getActiveMachines() : [];
         let WORLD_SIZE = window.getWorldSize ? window.getWorldSize() : 1500;
         let SHAPES = window.LOGISTICS_SHAPES_REF;
-        if (!railMap || !worldMap || !SHAPES) return null;
+        
+        if (!railMap) { console.warn("  [pathfindRail] railMap is missing!"); return null; }
+        if (!worldMap) { console.warn("  [pathfindRail] worldMap is missing!"); return null; }
+        if (!SHAPES) { console.warn("  [pathfindRail] SHAPES (LOGISTICS_SHAPES_REF) is missing!"); return null; }
 
         // Find target station machine
         let targetStation = null;
         for (let m of machines) {
-            if (m && m.type === 'machine_train_stop' && m.stationName === targetStationName) {
+            if (m && m.type === 'machine_train_stop' && (m.stationName || `Station_${m.id}`) === targetStationName) {
                 targetStation = m;
                 break;
             }
         }
-        if (!targetStation) return null;
+        if (!targetStation) {
+            console.warn(`  [pathfindRail] Target station "${targetStationName}" not found! Active stations:`, 
+                machines.filter(m => m && m.type === 'machine_train_stop').map(m => m.stationName || `Station_${m.id}`)
+            );
+            return null;
+        }
 
         // Find the rail tile adjacent to the target station
         let targetRailTile = this._findAdjacentRailTile(targetStation, railMap, worldMap, WORLD_SIZE);
-        if (!targetRailTile) return null;
+        if (!targetRailTile) {
+            console.warn(`  [pathfindRail] Target station "${targetStationName}" at (${targetStation.x},${targetStation.y}) has no adjacent rail tile!`);
+            return null;
+        }
 
-        let startIdx = startY * WORLD_SIZE + startX;
+        let startRailTile = { x: startX, y: startY };
+        if (railMap[startY * WORLD_SIZE + startX] === 0) {
+            console.log(`  [pathfindRail] Start coordinate (${startX},${startY}) is not a rail tile. Checking overlapping machines...`);
+            let startMachine = null;
+            for (let m of machines) {
+                if (m) {
+                    let w = 1, h = 1;
+                    let rIdx = m.rotIndex || 0;
+                    if (m.def && m.def.rotations && m.def.rotations[rIdx]) {
+                        w = m.def.rotations[rIdx].w || 1;
+                        h = m.def.rotations[rIdx].h || 1;
+                    }
+                    if (startX >= m.x && startX < m.x + w && startY >= m.y && startY < m.y + h) {
+                        startMachine = m;
+                        break;
+                    }
+                }
+            }
+            if (startMachine) {
+                console.log(`  [pathfindRail] Start coordinate overlaps machine of type "${startMachine.type}" (ID ${startMachine.id}) at (${startMachine.x},${startMachine.y}). Searching adjacent rails...`);
+                let adj = this._findAdjacentRailTile(startMachine, railMap, worldMap, WORLD_SIZE);
+                if (adj) {
+                    console.log(`  [pathfindRail] Found adjacent rail at (${adj.x},${adj.y})!`);
+                    startRailTile = adj;
+                } else {
+                    console.warn(`  [pathfindRail] Overlapping machine "${startMachine.type}" has no adjacent rail tile!`);
+                    return null;
+                }
+            } else {
+                console.warn(`  [pathfindRail] Start coordinate does not overlap any machine footprint!`);
+                return null;
+            }
+        }
+
+        let startIdx = startRailTile.y * WORLD_SIZE + startRailTile.x;
         let endIdx = targetRailTile.y * WORLD_SIZE + targetRailTile.x;
 
-        if (startIdx === endIdx) return [{ x: startX, y: startY }];
+        if (startIdx === endIdx) {
+            if (startX !== startRailTile.x || startY !== startRailTile.y) {
+                return [{ x: startX, y: startY }, { x: startRailTile.x, y: startRailTile.y }];
+            }
+            return [{ x: startX, y: startY }];
+        }
 
         this._initBFS();
         
@@ -172,7 +236,10 @@ export const TrainSystem = {
                     path.unshift({ x: cur % WORLD_SIZE, y: Math.floor(cur / WORLD_SIZE) });
                     cur = this._bfsCameFrom[cur];
                 }
-                path.unshift({ x: startX, y: startY });
+                path.unshift({ x: startRailTile.x, y: startRailTile.y });
+                if (startX !== startRailTile.x || startY !== startRailTile.y) {
+                    path.unshift({ x: startX, y: startY });
+                }
                 return path;
             }
 
@@ -204,11 +271,11 @@ export const TrainSystem = {
         return null; // No path found
     },
 
-    /**
-     * Find a rail tile adjacent to a train stop machine.
-     */
     _findAdjacentRailTile: function(station, railMap, worldMap, WORLD_SIZE) {
-        let r = station.def.rotations[station.rotIndex];
+        let r = station.def.rotations[station.rotIndex || 0];
+        console.log(`  [_findAdjacentRailTile] Scanning around station/depot "${station.type}" (ID ${station.id}) at (${station.x},${station.y}) with size ${r.w}x${r.h}.`);
+        let checkedCount = 0;
+        let railsFound = [];
         // Check all tiles adjacent to the machine's footprint
         for (let y = -1; y <= r.h; y++) {
             for (let x = -1; x <= r.w; x++) {
@@ -219,10 +286,15 @@ export const TrainSystem = {
                 let wy = station.y + y;
                 if (wx < 0 || wx >= WORLD_SIZE || wy < 0 || wy >= WORLD_SIZE) continue;
 
+                checkedCount++;
                 let idx = wy * WORLD_SIZE + wx;
-                if (railMap[idx] > 0) return { x: wx, y: wy };
+                if (railMap[idx] > 0) {
+                    railsFound.push({ x: wx, y: wy, val: railMap[idx] });
+                }
             }
         }
+        console.log(`  [_findAdjacentRailTile] Checked ${checkedCount} border tiles. Found rails:`, railsFound);
+        if (railsFound.length > 0) return { x: railsFound[0].x, y: railsFound[0].y };
         return null;
     },
 
@@ -230,7 +302,7 @@ export const TrainSystem = {
      * Find a rail tile adjacent to a train depot machine.
      */
     _findAdjacentRailTileForDepot: function(depot, railMap, worldMap, WORLD_SIZE) {
-        let r = depot.def.rotations[depot.rotIndex];
+        let r = depot.def.rotations[depot.rotIndex || 0];
         for (let y = -1; y <= r.h; y++) {
             for (let x = -1; x <= r.w; x++) {
                 if (x >= 0 && x < r.w && y >= 0 && y < r.h) continue;
@@ -264,7 +336,7 @@ export const TrainSystem = {
     findStationByName: function(name) {
         let machines = window.getActiveMachines ? window.getActiveMachines() : [];
         for (let m of machines) {
-            if (m && m.type === 'machine_train_stop' && m.stationName === name) return m;
+            if (m && m.type === 'machine_train_stop' && (m.stationName || `Station_${m.id}`) === name) return m;
         }
         return null;
     },
@@ -273,117 +345,141 @@ export const TrainSystem = {
      * Main tick - called every frame from the game loop.
      */
     tick: function(dt) {
+        if (!this._lastLogTime) this._lastLogTime = 0;
+        let shouldLog = Date.now() - this._lastLogTime > 3000; // print log every 3 seconds
+        if (shouldLog) {
+            this._lastLogTime = Date.now();
+            console.log(`[TrainSystem] Ticking ${this.trains.length} trains.`);
+        }
         for (let train of this.trains) {
-            // --- TRAVELING ---
-            if (train.state === 'traveling' && train.currentPath && train.currentPath.length > 0) {
-                if (train.fuel <= 0) {
-                    train.state = 'waiting_fuel'; // Stranded - hold position until refueled
-                    continue;
-                }
-
-                train.pathProgress += train.speed * dt;
-
-                while (train.pathProgress >= 1.0 && train.pathIdx < train.currentPath.length - 1) {
-                    let oldX = train.x, oldY = train.y;
-                    train.pathProgress -= 1.0;
-                    train.pathIdx++;
-                    train.x = train.currentPath[train.pathIdx].x;
-                    train.y = train.currentPath[train.pathIdx].y;
-
-                    // Update history for wagons to trail
-                    train.posHistory.unshift({ x: oldX, y: oldY });
-                    if (train.posHistory.length > train.wagons.length) train.posHistory.pop();
-
-                    // Consume fuel: 1 coal per 100 tiles
-                    train.fuel = Math.max(0, train.fuel - 0.01);
-                }
-
-                // Reached destination
-                if (train.pathIdx >= train.currentPath.length - 1) {
-                    train.currentPath = null;
-                    train.pathIdx = 0;
-                    train.pathProgress = 0;
-
-                    // Try to dock at the target station
-                    let schedEntry = train.schedule[train.scheduleIdx];
-                    if (schedEntry) {
-                        let station = this.findStationByName(schedEntry.stationName);
-                        if (station) {
-                            train.dockedAtId = station.id;
-                            station.dockedTrainId = train.id;
-                            train.waitTimer = 0;
-                            train.inactivityTimer = 0;
-                            train.lastTransferTick = 0;
-                            // Determine correct state from the departure condition:
-                            // wait_empty = this is a DROP-OFF stop (unload cargo here)
-                            // wait_full / wait_timer / wait_inactivity = this is a PICK-UP stop (load cargo here)
-                            if (schedEntry.condition === 'wait_empty') {
-                                train.state = 'unloading';
-                            } else if (schedEntry.condition === 'wait_timer') {
-                                train.state = 'waiting'; // Just wait, no transfer
-                            } else {
-                                train.state = 'loading';
-                            }
-                            if (typeof window.floatText === 'function') {
-                                window.floatText(station.x + 2, station.y, `Train arrived: ${train.name}`, '#ff9800');
-                            }
-                        } else {
-                            train.state = 'idle'; // Station disappeared
-                        }
-                    } else {
-                        train.state = 'idle';
+            try {
+                if (shouldLog) {
+                    console.log(`  - Train ID ${train.id} ("${train.name}"): state=${train.state}, fuel=${train.fuel.toFixed(2)}, pos=(${Math.round(train.x)},${Math.round(train.y)}), schedule length=${train.schedule.length}`);
+                    if (train.schedule.length > 0) {
+                        let currentEntry = train.schedule[train.scheduleIdx];
+                        console.log(`    Current schedule target: ${currentEntry ? currentEntry.stationName : 'None'} (idx ${train.scheduleIdx})`);
                     }
                 }
-            }
+                // --- TRAVELING ---
+                if (train.state === 'traveling' && train.currentPath && train.currentPath.length > 0) {
+                    if (train.fuel <= 0) {
+                        console.log(`[TrainSystem] Train ${train.id} ran out of fuel!`);
+                        train.state = 'waiting_fuel'; // Stranded - hold position until refueled
+                        continue;
+                    }
 
-            // --- LOADING / UNLOADING / WAITING ---
-            else if (train.state === 'loading' || train.state === 'unloading' || train.state === 'waiting') {
-                let schedEntry = train.schedule[train.scheduleIdx];
-                if (!schedEntry) { train.state = 'idle'; continue; }
+                    train.pathProgress += train.speed * dt;
 
-                let station = null;
-                if (train.dockedAtId != null) {
-                    let machines = window.getActiveMachines ? window.getActiveMachines() : [];
-                    station = machines[train.dockedAtId];
+                    while (train.pathProgress >= 1.0 && train.pathIdx < train.currentPath.length - 1) {
+                        let oldX = train.x, oldY = train.y;
+                        train.pathProgress -= 1.0;
+                        train.pathIdx++;
+                        train.x = train.currentPath[train.pathIdx].x;
+                        train.y = train.currentPath[train.pathIdx].y;
+
+                        // Update history for wagons to trail
+                        train.posHistory.unshift({ x: oldX, y: oldY });
+                        if (train.posHistory.length > train.wagons.length) train.posHistory.pop();
+
+                        // Consume fuel: 1 coal per 100 tiles
+                        train.fuel = Math.max(0, train.fuel - 0.01);
+                    }
+
+                    if (train.pathProgress >= 1.0 && train.pathIdx === train.currentPath.length - 1) {
+                        // Arrived at destination station!
+                        let schedEntry = train.schedule[train.scheduleIdx];
+                        if (schedEntry) {
+                            let station = this.findStationByName(schedEntry.stationName);
+                            if (station) {
+                                train.dockedAtId = station.id;
+                                station.dockedTrainId = train.id;
+                                train.waitTimer = 0;
+                                train.inactivityTimer = 0;
+                                train.lastTransferTick = 0;
+                                // Determine correct state from the departure condition:
+                                // wait_empty = this is a DROP-OFF stop (unload cargo here)
+                                // wait_full / wait_timer / wait_inactivity = this is a PICK-UP stop (load cargo here)
+                                if (schedEntry.condition === 'wait_empty') {
+                                    train.state = 'unloading';
+                                } else if (schedEntry.condition === 'wait_timer') {
+                                    train.state = 'waiting'; // Just wait, no transfer
+                                } else {
+                                    train.state = 'loading';
+                                }
+                                if (typeof window.floatText === 'function') {
+                                    window.floatText(station.x + 2, station.y, `Train arrived: ${train.name}`, '#ff9800');
+                                }
+                            } else {
+                                train.state = 'idle'; // Station disappeared
+                            }
+                        } else {
+                            train.state = 'idle';
+                        }
+                    }
                 }
-                if (!station) { train.state = 'idle'; continue; }
 
-                // Perform transfers every tick
-                let transferred = 0;
-                if (train.state === 'loading') {
-                    transferred = this._loadFromStation(train, station);
-                } else if (train.state === 'unloading') {
-                    transferred = this._unloadToStation(train, station);
+                // --- LOADING / UNLOADING / WAITING ---
+                else if (train.state === 'loading' || train.state === 'unloading' || train.state === 'waiting') {
+                    let schedEntry = train.schedule[train.scheduleIdx];
+                    if (!schedEntry) { train.state = 'idle'; continue; }
+
+                    let station = null;
+                    if (train.dockedAtId != null) {
+                        let machines = window.getActiveMachines ? window.getActiveMachines() : [];
+                        station = machines[train.dockedAtId];
+                    }
+                    if (!station) { train.state = 'idle'; continue; }
+
+                    // Refuel train from station inventory if coal is present
+                    if (station.inv && station.inv['coal'] > 0) {
+                        let need = train.maxFuel - train.fuel;
+                        if (need > 0) {
+                            let transfer = Math.min(station.inv['coal'], Math.ceil(need), 10);
+                            train.fuel = Math.min(train.maxFuel, train.fuel + transfer);
+                            station.inv['coal'] -= transfer;
+                            if (station.inv['coal'] <= 0) delete station.inv['coal'];
+                        }
+                    }
+
+                    // Perform transfers every tick
+                    let transferred = 0;
+                    if (train.state === 'loading') {
+                        transferred = this._loadFromStation(train, station);
+                    } else if (train.state === 'unloading') {
+                        transferred = this._unloadToStation(train, station);
+                    }
+
+                    if (transferred > 0) {
+                        train.lastTransferTick = 0;
+                        train.inactivityTimer = 0;
+                    } else {
+                        train.inactivityTimer += dt;
+                    }
+
+                    train.waitTimer += dt;
+
+                    // Check departure condition
+                    if (this._checkDepartureCondition(train, schedEntry)) {
+                        // Undock and advance schedule
+                        station.dockedTrainId = null;
+                        train.dockedAtId = null;
+                        this._advanceSchedule(train);
+                    }
                 }
 
-                if (transferred > 0) {
-                    train.lastTransferTick = 0;
-                    train.inactivityTimer = 0;
-                } else {
-                    train.inactivityTimer += dt;
+                // --- IDLE ---
+                else if (train.state === 'idle' && train.schedule.length > 0) {
+                    // Start traveling to next scheduled station
+                    this._beginTravelToNextStation(train);
                 }
 
-                train.waitTimer += dt;
-
-                // Check departure condition
-                if (this._checkDepartureCondition(train, schedEntry)) {
-                    // Undock and advance schedule
-                    station.dockedTrainId = null;
-                    train.dockedAtId = null;
-                    this._advanceSchedule(train);
+                // --- WAITING FOR FUEL ---
+                else if (train.state === 'waiting_fuel') {
+                    // Resume once refueled
+                    if (train.fuel > 0 && train.schedule.length > 0) train.state = 'idle';
                 }
-            }
-
-            // --- IDLE ---
-            else if (train.state === 'idle' && train.schedule.length > 0) {
-                // Start traveling to next scheduled station
-                this._beginTravelToNextStation(train);
-            }
-
-            // --- WAITING FOR FUEL ---
-            else if (train.state === 'waiting_fuel') {
-                // Resume once refueled
-                if (train.fuel > 0 && train.schedule.length > 0) train.state = 'idle';
+            } catch (e) {
+                console.error("Error ticking train " + train.id + ":", e);
             }
         }
     },
@@ -506,13 +602,30 @@ export const TrainSystem = {
      * Begin traveling to the next scheduled station.
      */
     _beginTravelToNextStation: function(train) {
-        if (train.schedule.length === 0) return;
-        if (train.fuel <= 0) return;
+        console.log(`[TrainSystem] _beginTravelToNextStation for train ${train.id} ("${train.name}"). Fuel: ${train.fuel.toFixed(2)}. ScheduleIdx: ${train.scheduleIdx}`);
+        if (train.schedule.length === 0) {
+            console.log(`  - Travel aborted: schedule is empty!`);
+            return;
+        }
+        if (train.fuel <= 0) {
+            console.log(`  - Travel aborted: train has 0 fuel!`);
+            return;
+        }
 
         let schedEntry = train.schedule[train.scheduleIdx];
-        if (!schedEntry) return;
+        if (!schedEntry) {
+            console.log(`  - Travel aborted: no schedule entry at index ${train.scheduleIdx}!`);
+            return;
+        }
 
+        console.log(`  - Attempting pathfinding to station: "${schedEntry.stationName}" from current pos: (${train.x.toFixed(1)}, ${train.y.toFixed(1)})`);
         let path = this.pathfindRail(train.x, train.y, schedEntry.stationName);
+        if (!path) {
+            console.log(`  - Pathfinding failed! No path found to "${schedEntry.stationName}".`);
+        } else {
+            console.log(`  - Path found! Path length: ${path.length}.`);
+        }
+
         if (path && path.length > 1) {
             // Pre-check: refuse to depart if insufficient fuel for the full trip
             let fuelCost = path.length * 0.01;
