@@ -266,6 +266,7 @@ export const MACHINE_DEFS = {
         renderAnim: Anim.spin('=')
     },
     'machine_generator': {
+        recipes: [{ in: { 'coal': 1 }, out: {} }],
         id: 'machine_generator', name: 'Coal Generator', color: '#757575',
         rotations: [{ w: 5, h: 5, art: ["/GGG\\", "|===|", "|===|", "|===|", "\\GGG/"], outX: null, outY: null }],
         energy: { type: 'none' }, maxEnergy: 10000,
@@ -805,6 +806,7 @@ export const MACHINE_DEFS = {
         renderAnim: Anim.glow('D', 'd', '#00bcd4')
     },
     'machine_pumpjack': {
+        recipes: [{ in: {}, out: { 'crude_oil': 1 } }],
         id: 'machine_pumpjack', name: 'Pumpjack', color: '#212121',
         rotations: genRot4({ w: 5, h: 3, art: ["/---\\", "| P |", "\\-v-/"], outX: 2, outY: 3 }, { w: 3, h: 5, art: ["/-\\", "< |", "|P|", "| |", "\\-/"], outX: -1, outY: 2 }),
         energy: { type: 'electric', usage: 10 }, processTime: 2.0,
@@ -858,6 +860,7 @@ export const MACHINE_DEFS = {
         renderAnim: Anim.wave('~', '#212121')
     },
     'machine_gas_generator': {
+        recipes: [{ in: { 'petroleum_gas': 1 }, out: {} }, { in: { 'hydrogen': 1 }, out: {} }],
         id: 'machine_gas_generator', name: 'Gas Generator', color: '#00acc1',
         rotations: [{ w: 5, h: 5, art: ["/GGG\\", "|~~~|", "|~~~|", "|~~~|", "\\GGG/"], outX: null, outY: null }],
         energy: { type: 'none' }, maxEnergy: 100000,
@@ -2157,6 +2160,7 @@ export const MACHINE_DEFS = {
                 renderAnim: function (char, t) { if (char === 'R') return { color: t === 0 ? '#64dd17' : '#1b5e20' }; return null; }
             },
                 'machine_waste_storage': {
+        recipes: [{ in: { 'nuclear_waste': 1 }, out: {} }],
                 id: 'machine_waste_storage', name: 'Nuclear Waste Storage', color: '#263238',
                 rotations: genRot4({ w: 5, h: 5, art: ["/---\\", "| @ |", "| @ |", "| @ |", "\\---/"], outX: null, outY: null }),
                 energy: { type: 'none' }, maxStack: 5000, acceptsItem: (m, itm) => itm === 'nuclear_waste',
@@ -2167,6 +2171,7 @@ export const MACHINE_DEFS = {
                 }
             },
                 'machine_steam_turbine': {
+        recipes: [{ in: { 'steam': 8 }, out: {} }],
                 id: 'machine_steam_turbine', name: 'Heavy Steam Turbine', color: '#546e7a',
                 rotations: [
                     { w: 11, h: 13, art: ["/---------\\", "|  ~~~~~  |", "| ======= |", "| ======= |", "| ======= |", "| ======= |", "| ======= |", "| ======= |", "| ======= |", "| ======= |", "| ======= |", "|  ~~~~~  |", "\\---------/"], outX: null, outY: null }
@@ -2188,6 +2193,7 @@ export const MACHINE_DEFS = {
                 renderAnim: Anim.wave('=', '#b2ebf2')
             },
                 'machine_fission_reactor': {
+        recipes: [{ in: { 'uranium_fuel_rod': 1, 'water': 40 }, out: { 'steam': 320 }, out2: { 'nuclear_waste': 1 } }],
                 id: 'machine_fission_reactor', name: 'Fission Reactor CORE', color: '#37474f',
                 rotations: [
                     {
@@ -2304,6 +2310,7 @@ export const MACHINE_DEFS = {
                 energy: { type: 'electric', usage: 0 }, maxEnergy: 10000000 // Act as a massive power buffer bridged to Hyper Wire
             },
                 'machine_fusion_reactor': {
+        recipes: [{ in: { 'deuterium': 1, 'tritium': 1, 'liquid_n2': 10 }, out: { 'superheated_n2': 10 } }],
                 id: 'machine_fusion_reactor', name: 'Fusion Reactor Core', color: '#00e5ff',
                 rotations: [{
                     w: 25, h: 25, art: [
@@ -2629,6 +2636,7 @@ export const MACHINE_DEFS = {
                 }
             },
     'machine_q_router': {
+        recipes: [{ in: { 'entangled_pair': 1 }, out: {} }],
                 id: 'machine_q_router', name: 'Q-Router', color: '#6a1b9a',
                 rotations: genRot4({ w: 2, h: 2, art: ["QR", "vv"], outX: 0, outY: 2 }),
                 energy: { type: 'electric', usage: 0 }, maxEnergy: 1200000, maxStack: 200,
@@ -2745,6 +2753,7 @@ export const MACHINE_DEFS = {
                 }
             },
     'machine_plasma_manifold': {
+        recipes: [{ in: { 'raw_plasma': 2, 'water': 1 }, out: { 'stabilized_plasma': 1 }, out2: { 'plasma_slag': 1 } }],
                 id: 'machine_plasma_manifold', name: 'Plasma Manifold', color: '#ff9100',
                 rotations: [
                     {
@@ -2867,7 +2876,8 @@ export const MACHINE_DEFS = {
                 energy: { type: 'electric', usage: 15 }, processTime: 4.0,
                 recipes: [
                     { in: { tungsten_ingot: 2, coal: 2 }, out: { tungsten_carbide: 1 } },
-                    { in: { tungsten_carbide: 2 }, out: { carbide_rod: 3 } }
+                    { in: { tungsten_carbide: 2 }, out: { carbide_rod: 3 } },
+                    { in: { stone: 5, gravel: 5, sand: 5, iron_ingot: 1 }, out: { matter_slug: 1 } }
                 ],
                 renderAnim(char, t) {
                     if (char === '=') return { char: t === 0 ? '=' : '_' };
@@ -2918,6 +2928,7 @@ export const MACHINE_DEFS = {
                 }
             },
     'machine_mhd_generator': {
+        recipes: [{ in: { 'stabilized_plasma': 1 }, out: {} }],
                 id: 'machine_mhd_generator', name: 'MHD Generator', color: '#ff6d00',
                 rotations: (() => {
                     const rot = {
@@ -3090,6 +3101,7 @@ export const MACHINE_DEFS = {
                 renderAnim: Anim.glow('~', '-', '#d500f9')
             },
     'machine_annihilation_reactor': {
+        recipes: [{ in: { 'antimatter_cell': 1, 'matter_slug': 1 }, out: {} }],
         id: 'machine_annihilation_reactor', name: 'Annihilation Reactor', color: '#ff1744',
         rotations: [{
             w: 11, h: 11,
@@ -3456,7 +3468,8 @@ export const recipes = [
     { name: "Lead-Acid Battery Bank", env: "table", output: { id: "machine_battery_lead", amount: 1 }, input: { "lead_plate": 10, "sulfuric_acid": 10, "copper_wire": 10 } },
     { name: "Heavy Item Pipe x5", env: "table", output: { id: "item_pipe_heavy", amount: 5 }, input: { "item_pipe": 5, "steel_plate": 2 } },
     { name: "Heavy Brass Pipe x5", env: "table", output: { id: "brass_pipe_heavy", amount: 5 }, input: { "brass_pipe": 5, "steel_plate": 2 } },
-    { name: "Plasmatic Superconductor x5", env: "table", output: { id: "plasmatic_superconductor", amount: 5 }, input: { "sicu_cable": 5, "stabilized_plasma": 1 } },
+    { name: "Plasmatic Superconductor x5", env: "table", output: { id: "plasmatic_superconductor", amount: 5 }, input: { "hyper_wire": 5, "quantum_circuit": 1, "plasma_composite_plate": 1 } },
+    { name: "Chemical Bulk Tank", env: "table", output: { id: "machine_chemical_tank", amount: 1 }, input: { "invar_casing": 20, "glass_pipe": 40 } },
     { name: "Quantum Fiber Cable x5", env: "table", output: { id: "quantum_fiber_cable", amount: 5 }, input: { "quartz_cable": 5, "antimatter_pellet": 1 } },
     { name: "Plasma Conduit x5", env: "table", output: { id: "plasma_conduit_pipe", amount: 5 }, input: { "insulated_pipe": 5, "plasma_composite_plate": 1 } },
     { name: "Magnetic Containment Pipe x5", env: "table", output: { id: "magnetic_containment_pipe", amount: 5 }, input: { "item_pipe_heavy": 5, "rhenite_alloy": 1 } },
@@ -3524,7 +3537,7 @@ export const recipes = [
     { name: "Annihilation Reactor", env: "table", output: { id: "machine_annihilation_reactor", amount: 1 }, input: { irradiated_plate: 50, quantum_circuit: 20, sicu_cable: 100, machine_fission_reactor: 1 } },
     { name: "Antimatter Catalyst Bath", env: "table", output: { id: "machine_antimatter_catalyst_bath", amount: 1 }, input: { irradiated_plate: 20, heavy_water: 50, invar_casing: 50 } },
     { name: "Terrain Vitrifier", env: "table", output: { id: "machine_terrain_vitrifier", amount: 1 }, input: { machine_plasma_manifold: 1, antimatter_pellet: 1, steel_plate: 100 } },
-    { name: "Quantum Stabilizer", env: "table", output: { id: "machine_quantum_stabilizer", amount: 1 }, input: { magnetic_containment_pipe: 100, compute_module: 100, rhenite_alloy: 100, sicu_cable: 500 } },
+    { name: "Quantum Stabilizer", env: "table", output: { id: "machine_quantum_stabilizer", amount: 1 }, input: { "compute_module": 10, "sicu_cable": 50, "irradiated_plate": 20 } },
     { name: "Pseudo Matter Compositor", env: "table", output: { id: "machine_pseudo_matter_compositor", amount: 1 }, input: { machine_plasma_arc_welder: 1, antimatter_pellet: 2, quantum_fiber_cable: 20 } },
 
     // --- DIGITAL ERA RECIPES ---
