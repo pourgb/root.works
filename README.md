@@ -1,3 +1,4 @@
+geminislop below for intro(please ignore the catgirl):
 # ROOT.WORKS
 
 Welcome to **ROOT.WORKS**, a highly optimized, browser-based factory automation, simulation, and logistics game. Build massive supply chains, construct train networks, write custom PLC scripts, harness plasma physics, and automate everything from simple agriculture to quantum teleportation.
@@ -38,7 +39,9 @@ Open your web browser and navigate to:
 ```text
 http://localhost:8000/afac.html
 ```
-
+---
+or you can access https://root-works.netlify.app/
+which is hopefully, updated.
 ---
 
 ## Basic Controls
