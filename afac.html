@@ -331,6 +331,7 @@
         import { acceptsTank, genRot4, Anim, tankUpdate, MACHINE_DEFS, recipes } from './data/machines.js';
         import { AgentController } from './data/agent.js';
         import { AgentWrapper } from './data/agent_wrapper.js';
+        import { PLCLexer, PLCParser, PLCInterpreter } from './js/plc_interpreter.js';
 
         "use strict";
         let isAgentMode = false; window.isAgentMode = false;
@@ -376,6 +377,11 @@
 
             let idCounter = 1;
             for (let key in ITEM_COLORS) { ITEM_TO_ID[key] = idCounter; ID_TO_ITEM[idCounter] = key; idCounter++; }
+
+            window.PLCLexer = PLCLexer;
+            window.PLCParser = PLCParser;
+            window.plcInterpreter = new PLCInterpreter();
+
             initGame();
         }
 
@@ -679,7 +685,10 @@
                     heat: m.heat || 0, fusionActive: m.fusionActive || false, charge: m.charge || 0,
                     partnerId: m.partnerId, decoherent: m.decoherent, pattern: m.pattern,
                     reqItem: m.reqItem, reqQty: m.reqQty, jobs: m.jobs, currentJob: m.currentJob,
-                    ontoIndex: m.ontoIndex, fuelTime: m.fuelTime, wasteTimer: m.wasteTimer
+                    ontoIndex: m.ontoIndex, fuelTime: m.fuelTime, wasteTimer: m.wasteTimer,
+                    plcScript: m.plcScript, plcVariables: m.plcVariables, plcEnv: m.plcEnv, plcError: m.plcError,
+                    channelId: m.channelId, targetItem: m.targetItem, currentValue: m.currentValue,
+                    disabledByPLC: m.disabledByPLC
                 } : null),
                 belts: itemsOnBelts.map(i => ({ x: i.x, y: i.y, id: i.id, progress: i.progress, route: i.route, routeIdx: i.routeIdx, dx: i.dx, dy: i.dy })),
                 worldMap: rleEncode(worldMap),
@@ -981,7 +990,8 @@
                     heat: m.heat || 0, fusionActive: m.fusionActive || false, charge: m.charge || 0,
                     partnerId: m.partnerId, decoherent: m.decoherent,
                     pattern: m.pattern, reqItem: m.reqItem, reqQty: m.reqQty, jobs: m.jobs, currentJob: m.currentJob,
-                    ontoIndex: m.ontoIndex, fuelTime: m.fuelTime, wasteTimer: m.wasteTimer
+                    ontoIndex: m.ontoIndex, fuelTime: m.fuelTime, wasteTimer: m.wasteTimer,
+                    plcScript: m.plcScript, channelId: m.channelId, targetItem: m.targetItem, currentValue: m.currentValue
                 } : null),
                 belts: itemsOnBelts.map(i => ({
                     x: i.x, y: i.y, id: i.id, progress: i.progress,
@@ -1080,7 +1090,7 @@
                         newUnderlying.set(m.underlying);
                     }
 
-                    return {
+                    let nm = {
                         ...m,
                         def: def,
                         rotIndex: m.rotIndex % def.rotations.length,
@@ -1089,6 +1099,17 @@
                         outBuffer: m.outBuffer || {},
                         out2Buffer: m.out2Buffer || {}
                     };
+                    if (nm.plcScript) {
+                        try {
+                            const lexer = new window.PLCLexer(nm.plcScript);
+                            const parser = new window.PLCParser(lexer);
+                            nm.plcScriptAST = parser.parse();
+                            nm.plcError = null;
+                        } catch (e) {
+                            nm.plcError = e.message;
+                        }
+                    }
+                    return nm;
                 });
 
                 // Re-register all loaded machines with WASM (precompile them eagerly)
@@ -1470,7 +1491,7 @@
 
                 gameState.register_standard_machine(
                     m.id, m.x, m.y,
-                    m.def.processTime || 1,
+                    m.disabledByPLC ? 999999999 : (m.def.processTime || 1),
                     !!m._isElectric, !!m._isBurner, fuelId, energyUsage, maxEnergy,
                     new Float32Array(flatRecipes), new Uint16Array(flatPorts), new Uint16Array(flatOut2)
                 );
@@ -1491,7 +1512,45 @@
             }
 
             m._compiled = true;
-        } function updateRouteMap() {
+        }
+        function syncMachineFromWasm(m) {
+            if (m._isStandardWasm && typeof gameState !== 'undefined') {
+                let invFlat = gameState.get_machine_inv_flat(m.id);
+                m.inv = {};
+                for (let i = 0; i < invFlat.length; i += 2) {
+                    if (ID_TO_ITEM[invFlat[i]]) m.inv[ID_TO_ITEM[invFlat[i]]] = invFlat[i + 1];
+                }
+
+                let outFlat = gameState.get_machine_out_flat(m.id, false);
+                m.outBuffer = {};
+                for (let i = 0; i < outFlat.length; i += 2) {
+                    if (ID_TO_ITEM[outFlat[i]]) m.outBuffer[ID_TO_ITEM[outFlat[i]]] = outFlat[i + 1];
+                }
+
+                let out2Flat = gameState.get_machine_out_flat(m.id, true);
+                m.out2Buffer = {};
+                for (let i = 0; i < out2Flat.length; i += 2) {
+                    if (ID_TO_ITEM[out2Flat[i]]) m.out2Buffer[ID_TO_ITEM[out2Flat[i]]] = out2Flat[i + 1];
+                }
+                m.energy = gameState.get_machine_energy(m.id);
+            }
+        }
+        window.syncMachineFromWasm = syncMachineFromWasm;
+
+        function setMachineDisabledByPLC(m, disabled) {
+            if (!!m.disabledByPLC === !!disabled) return;
+            if (m._isStandardWasm) {
+                syncMachineFromWasm(m);
+                m.disabledByPLC = !!disabled;
+                m._compiled = false;
+                precompileMachine(m);
+            } else {
+                m.disabledByPLC = !!disabled;
+            }
+        }
+        window.setMachineDisabledByPLC = setMachineDisabledByPLC;
+
+        function updateRouteMap() {
             ROUTE_MAP.clear();
             for (let rt of activeRoutes) {
                 let startKey = rt.path[0].x + "," + rt.path[0].y;
@@ -1715,6 +1774,7 @@
             for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) { let id = worldMap[(py + y) * WORLD_SIZE + (px + x)]; if (id >= 50000) { nearM = activeMachines[id - 50000]; break; } }
             if (nearM) {
                 if (nearM.type === 'machine_cdh') toggleCdhUI(nearM);
+                else if (nearM.type === 'machine_cdh_plc') togglePlcUI(nearM);
                 else if (nearM.type === 'machine_crafter') { currentCraftingEnv = 'table'; toggleCrafting(); }
                 else toggleMachineUI(nearM);
             } else toggleInventory();
@@ -1846,6 +1906,144 @@
             html += `</div></div>`;
 
             statsDiv.innerHTML = html;
+        };
+
+        function togglePlcUI(m) {
+            const v = m !== null; closeAllMenus();
+            machineUiVisible = v; // Hijack 'machineUiVisible' to utilize E/ESC closing logic
+            document.getElementById('plc-coding-ui').style.display = v ? 'flex' : 'none';
+            currentOpenMachine = m;
+            if (v) {
+                document.getElementById('plc-coding-script').value = m.plcScript || '';
+                updatePlcUI();
+            }
+        }
+        window.togglePlcUI = togglePlcUI;
+
+        window.updatePlcUI = function () {
+            if (!currentOpenMachine || currentOpenMachine.type !== 'machine_cdh_plc') return;
+            
+            const badge = document.getElementById('plc-editor-badge');
+            const errDiv = document.getElementById('plc-coding-error-msg');
+            
+            if (currentOpenMachine.plcError) {
+                errDiv.innerText = "Syntax Error: " + currentOpenMachine.plcError;
+                errDiv.style.display = 'block';
+                if (badge) {
+                    badge.innerText = "Error";
+                    badge.style.background = "rgba(244, 67, 54, 0.2)";
+                    badge.style.color = "#f44336";
+                    badge.style.borderColor = "rgba(244, 67, 54, 0.4)";
+                }
+            } else {
+                errDiv.style.display = 'none';
+                if (badge) {
+                    if (currentOpenMachine.plcScriptAST) {
+                        badge.innerText = "Compiled";
+                        badge.style.background = "rgba(76, 175, 80, 0.2)";
+                        badge.style.color = "#4caf50";
+                        badge.style.borderColor = "rgba(76, 175, 80, 0.4)";
+                    } else {
+                        badge.innerText = "Empty";
+                        badge.style.background = "rgba(158, 158, 158, 0.2)";
+                        badge.style.color = "#9e9e9e";
+                        badge.style.borderColor = "rgba(158, 158, 158, 0.4)";
+                    }
+                }
+            }
+
+            const inputsDiv = document.getElementById('plc-monitor-inputs');
+            const outputsDiv = document.getElementById('plc-monitor-outputs');
+            
+            let inHtml = '';
+            let outHtml = '';
+            
+            if (currentOpenMachine.dataGrid && currentOpenMachine.dataGrid.machines) {
+                const gridMachines = currentOpenMachine.dataGrid.machines;
+                
+                const inNodes = gridMachines.filter(nm => nm && (nm.type === 'machine_gp_input' || nm.type === 'machine_pgp_input'));
+                if (inNodes.length > 0) {
+                    inNodes.sort((a, b) => (a.channelId || 0) - (b.channelId || 0)).forEach(nm => {
+                        const isPhys = nm.type === 'machine_pgp_input';
+                        const typeLabel = isPhys ? 'Physical' : 'Digital';
+                        const targetDetail = isPhys ? `Attr: ${nm.targetItem || 'none'}` : `Item: ${nm.targetItem || 'none'}`;
+                        const color = isPhys ? '#b2ff59' : '#76ff03';
+                        inHtml += `
+                            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 6px 10px; border-radius: 4px; font-family: monospace; font-size: 12px;">
+                                <div style="display: flex; flex-direction: column;">
+                                    <span style="font-weight: bold; color: ${color};">IN(${nm.channelId || 0})</span>
+                                    <span style="font-size: 10px; color: #5f6c7d;">${typeLabel} (${targetDetail})</span>
+                                </div>
+                                <span style="font-size: 13px; font-weight: bold; color: #fff;">${nm.currentValue || 0}</span>
+                            </div>
+                        `;
+                    });
+                } else {
+                    inHtml = `<div style="color: #5f6c7d; font-size: 12px; font-style: italic; padding: 4px;">No input nodes detected.</div>`;
+                }
+
+                const outNodes = gridMachines.filter(nm => nm && (nm.type === 'machine_gp_output' || nm.type === 'machine_pgp_output'));
+                if (outNodes.length > 0) {
+                    outNodes.sort((a, b) => (a.channelId || 0) - (b.channelId || 0)).forEach(nm => {
+                        const isPhys = nm.type === 'machine_pgp_output';
+                        const typeLabel = isPhys ? 'Physical' : 'Digital';
+                        const targetDetail = isPhys ? `Attr: ${nm.targetItem || 'enabled'}` : `General`;
+                        const color = isPhys ? '#ff5252' : '#ff1744';
+                        outHtml += `
+                            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 6px 10px; border-radius: 4px; font-family: monospace; font-size: 12px;">
+                                <div style="display: flex; flex-direction: column;">
+                                    <span style="font-weight: bold; color: ${color};">OUT(${nm.channelId || 0})</span>
+                                    <span style="font-size: 10px; color: #5f6c7d;">${typeLabel} (${targetDetail})</span>
+                                </div>
+                                <span style="font-size: 13px; font-weight: bold; color: #fff;">${nm.currentValue || 0}</span>
+                            </div>
+                        `;
+                    });
+                } else {
+                    outHtml = `<div style="color: #5f6c7d; font-size: 12px; font-style: italic; padding: 4px;">No output nodes detected.</div>`;
+                }
+            } else {
+                inHtml = `<div style="color: #5f6c7d; font-size: 12px; font-style: italic; padding: 4px;">No grid connection.</div>`;
+                outHtml = `<div style="color: #5f6c7d; font-size: 12px; font-style: italic; padding: 4px;">No grid connection.</div>`;
+            }
+            
+            inputsDiv.innerHTML = inHtml;
+            outputsDiv.innerHTML = outHtml;
+
+            const varsDiv = document.getElementById('plc-monitor-variables');
+            let varsHtml = '';
+            if (currentOpenMachine.plcEnv && Object.keys(currentOpenMachine.plcEnv).length > 0) {
+                for (const [k, v] of Object.entries(currentOpenMachine.plcEnv)) {
+                    varsHtml += `<div><span style="color: #8892b0;">${k}</span> = <span style="color: #ffeb3b;">${v}</span></div>`;
+                }
+            } else {
+                varsHtml = `<div style="color: #5f6c7d; font-style: italic;">None initialized.</div>`;
+            }
+            varsDiv.innerHTML = varsHtml;
+        };
+
+        window.savePlcCodingScript = function () {
+            if (!currentOpenMachine || currentOpenMachine.type !== 'machine_cdh_plc') return;
+            const scriptText = document.getElementById('plc-coding-script').value;
+            currentOpenMachine.plcScript = scriptText;
+
+            try {
+                if (scriptText.trim() === '') {
+                    currentOpenMachine.plcScriptAST = null;
+                    currentOpenMachine.plcError = null;
+                } else {
+                    const lexer = new window.PLCLexer(scriptText);
+                    const parser = new window.PLCParser(lexer);
+                    currentOpenMachine.plcScriptAST = parser.parse();
+                    currentOpenMachine.plcError = null;
+                }
+                updatePlcUI();
+                floatText(currentOpenMachine.x, currentOpenMachine.y, "PLC Compiled!", "#00e5ff");
+            } catch (e) {
+                currentOpenMachine.plcError = e.message;
+                updatePlcUI();
+                floatText(currentOpenMachine.x, currentOpenMachine.y, "Compile Error!", "#ff1744");
+            }
         };
 
 
@@ -1990,18 +2188,15 @@
 
             // Active Recipe Status
             const recDiv = document.getElementById('machine-active-recipe');
-            if (currentOpenMachine.def.recipes && currentOpenMachine.def.recipes.length > 0) {
-                let activeRec = null;
-                for (let r of currentOpenMachine.def.recipes) {
-                    let canCraft = true; for (let req in r.in) { if ((mInv[req] || 0) < r.in[req]) { canCraft = false; break; } }
-                    if (canCraft) { activeRec = r; break; }
-                }
-                if (activeRec) {
-                    let p = Math.floor((currentOpenMachine.timer / currentOpenMachine.def.processTime) * 100);
-                    recDiv.innerHTML = `<strong>Processing:</strong><br>${Object.keys(activeRec.out).map(k => k.replace(/_/g, ' ')).join(', ')}<br>Progress: ${Math.min(100, p)}%`;
-                } else {
-                    recDiv.innerHTML = `<em style="color:#d32f2f;">Waiting for ingredients/power...</em>`;
-                }
+            if (currentOpenMachine.type === 'machine_fission_reactor') {
+                let heatPct = Math.min(100, ((currentOpenMachine.heat || 0) / 10000) * 100);
+                let heatColor = heatPct < 50 ? '#4caf50' : (heatPct < 85 ? '#ff9800' : '#f44336');
+                let status = currentOpenMachine.disabledByPLC ? "DISABLED BY PLC" : ((currentOpenMachine.fuelTime > 0) ? "BURNING FUEL" : "IDLE");
+                let statusColor = currentOpenMachine.disabledByPLC ? "#ff1744" : ((currentOpenMachine.fuelTime > 0) ? "#76ff03" : "#aaa");
+                recDiv.innerHTML = `<strong>CORE STATUS: <span style="color:${statusColor};">${status}</span></strong><br>
+        Temp: <span style="color:${heatColor}; font-weight:bold;">${Math.floor(currentOpenMachine.heat || 0)} / 10000</span><br>
+        <div style="background:#555; height:6px; width:100%; margin-top:4px;"><div style="background:${heatColor}; height:100%; width:${heatPct}%;"></div></div>
+        <small style="color:#aaa;">Requires Water & Graphite Rods!</small>`;
             } else if (currentOpenMachine.type === 'machine_miner') {
                 recDiv.innerHTML = `Mining: ${currentOpenMachine.oreType ? currentOpenMachine.oreType.replace(/_/g, ' ') : 'Nothing'}`;
             } else if (currentOpenMachine.type === 'machine_stencil_press') {
@@ -2016,14 +2211,6 @@
             } else if (currentOpenMachine.type === 'machine_chain_gunner') {
                 let hasRadar = currentOpenMachine.dataGrid && currentOpenMachine.dataGrid.machines.some(rm => rm && rm.type === 'machine_defense_radar' && rm.def.isWorking(rm));
                 recDiv.innerHTML = `<strong>Radar Uplink:</strong><br>${hasRadar ? '<span style="color:#4caf50;">CONNECTED 📡</span>' : '<span style="color:#f44336;">OFFLINE / BLIND ❌</span>'}`;
-            } else if (currentOpenMachine.type === 'machine_fission_reactor') {
-                let heatPct = Math.min(100, ((currentOpenMachine.heat || 0) / 10000) * 100);
-                let heatColor = heatPct < 50 ? '#4caf50' : (heatPct < 85 ? '#ff9800' : '#f44336');
-                let status = (currentOpenMachine.fuelTime > 0) ? "BURNING FUEL" : "IDLE";
-                recDiv.innerHTML = `<strong>CORE STATUS: ${status}</strong><br>
-        Temp: <span style="color:${heatColor}; font-weight:bold;">${Math.floor(currentOpenMachine.heat || 0)} / 10000</span><br>
-        <div style="background:#555; height:6px; width:100%; margin-top:4px;"><div style="background:${heatColor}; height:100%; width:${heatPct}%;"></div></div>
-        <small style="color:#aaa;">Requires Water & Graphite Rods!</small>`;
             } else if (currentOpenMachine.type === 'machine_waste_storage') {
                 recDiv.innerHTML = `<strong> RADIATION SHIELDING ACTIVE</strong><br>Waste slowly decays over time.`;
             } else if (currentOpenMachine.type === 'machine_q_router') {
@@ -2111,6 +2298,18 @@
             </div>
             <em style="color:#f44336; font-size:11px; font-weight:bold;">Manual insertion disabled.<br>Use Import Uplinks to push items in.</em>
         `;
+            } else if (currentOpenMachine.def.recipes && currentOpenMachine.def.recipes.length > 0) {
+                let activeRec = null;
+                for (let r of currentOpenMachine.def.recipes) {
+                    let canCraft = true; for (let req in r.in) { if ((mInv[req] || 0) < r.in[req]) { canCraft = false; break; } }
+                    if (canCraft) { activeRec = r; break; }
+                }
+                if (activeRec) {
+                    let p = Math.floor((currentOpenMachine.timer / currentOpenMachine.def.processTime) * 100);
+                    recDiv.innerHTML = `<strong>Processing:</strong><br>${Object.keys(activeRec.out).map(k => k.replace(/_/g, ' ')).join(', ')}<br>Progress: ${Math.min(100, p)}%`;
+                } else {
+                    recDiv.innerHTML = `<em style="color:#d32f2f;">Waiting for ingredients/power...</em>`;
+                }
             } else {
                 recDiv.innerHTML = `<em>N/A</em>`;
             }
@@ -3166,7 +3365,7 @@
             }
 
             for (let i = 0; i < activeMachines.length; i++) {
-                let m = activeMachines[i]; if (!m) continue;
+                let m = activeMachines[i]; if (!m || m.disabledByPLC) continue;
                 if (!m._compiled) precompileMachine(m); // Bootstraps machines built before patch
 
                 if (m._isStandardWasm) continue; // Offloaded entirely to Rust memory structure!
@@ -3390,8 +3589,9 @@
                             }
                             if (recipeCan) { isWorking = true; break; }
                         }
-                    }
                 }
+                }
+                if (m.disabledByPLC) isWorking = false;
 
                 for (let y = 0; y < r.h; y++) {
                     for (let x = 0; x < r.w; x++) {
@@ -4075,10 +4275,11 @@
 
         const _oldGameLoop = gameLoop;
         gameLoop = function (timestamp) {
-            if (machineUiVisible && currentOpenMachine && document.activeElement.tagName !== "INPUT") {
+            if (machineUiVisible && currentOpenMachine) {
                 if (!_uiMouseDown && (timestamp - _lastUiUpdate > 250)) {
                     if (currentOpenMachine.type === 'machine_cdh') updateCdhUI();
-                    else updateMachineUI();
+                    else if (currentOpenMachine.type === 'machine_cdh_plc') updatePlcUI();
+                    else if (document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "TEXTAREA") updateMachineUI();
                     _lastUiUpdate = timestamp;
                 }
             }
@@ -5020,7 +5221,6 @@
 
         // ── 4. UI INJECTION FOR CRAFTER, REQUESTER & GRID TERMINAL ──
 
-        // Add new HTML UI overlays securely
         document.body.insertAdjacentHTML('beforeend', `
     <div id="grid-crafting-ui" class="menu-ui" style="width: 900px; max-height: 85vh; z-index: 110; background:rgba(10,20,30,0.98); border:2px solid #00bcd4;">
         <h2 style="color:#00bcd4; border-bottom:1px solid #00bcd4;">Grid Crafting Terminal</h2>
@@ -5051,6 +5251,94 @@
         </div>
         <br><div class="ui-row" style="color:#aaa;">Press <span class="key" style="color:#00bcd4;">E</span> or <span class="key" style="color:#00bcd4;">ESC</span> to close</div>
     </div>
+
+    <div id="plc-coding-ui" class="menu-ui" style="width: 960px; max-height: 90vh; display: none; background: rgba(10, 16, 22, 0.98); border: 2px solid #00b0ff; border-radius: 8px; box-shadow: 0 0 30px rgba(0, 176, 255, 0.25); color: #e0e6ed; padding: 20px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow: hidden; flex-direction: column;">
+        <!-- Header -->
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid rgba(0, 176, 255, 0.3); padding-bottom: 12px; margin-bottom: 16px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="width: 12px; height: 12px; border-radius: 50%; background: #00b0ff; box-shadow: 0 0 10px #00b0ff; animate: pulse 2s infinite;"></div>
+                <h2 style="margin: 0; color: #00b0ff; font-size: 20px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;">PLC Logic Processor Coding Terminal</h2>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <span id="plc-editor-badge" style="font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: bold; background: rgba(158, 158, 158, 0.15); color: #9e9e9e; border: 1px solid rgba(158, 158, 158, 0.3); text-transform: uppercase; letter-spacing: 0.5px;">Empty</span>
+                <span style="font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: bold; background: rgba(0, 176, 255, 0.1); color: #00b0ff; border: 1px solid rgba(0, 176, 255, 0.2);">Data Link Active</span>
+            </div>
+        </div>
+
+        <!-- Main Workspace -->
+        <div style="display: flex; gap: 20px; flex: 1; overflow: hidden; min-height: 480px;">
+            <!-- Left Pane: Script Editor & Syntax -->
+            <div style="flex: 1.8; display: flex; flex-direction: column; gap: 12px; overflow: hidden;">
+                <div style="flex: 1; display: flex; flex-direction: column; background: #080b0e; border: 1px solid #1a222d; border-radius: 6px; overflow: hidden; position: relative;">
+                    <!-- Code Area Title -->
+                    <div style="background: #0f141a; padding: 8px 12px; font-size: 11px; color: #8892b0; font-family: monospace; border-bottom: 1px solid #1a222d; display: flex; justify-content: space-between;">
+                        <span>plc_logic_processor.plc</span>
+                        <span>UTF-8</span>
+                    </div>
+                    <textarea id="plc-coding-script" style="flex: 1; width: 100%; border: none; outline: none; background: transparent; color: #00e5ff; font-family: 'Courier New', monospace; font-size: 14px; padding: 12px; resize: none; line-height: 1.5; box-sizing: border-box;" placeholder="// Type your PLC code here...\n// Syntax:\n//   IF IN(0) > 10 THEN\n//     OUT(1) = 1\n//   ELSE\n//     OUT(1) = 0\n//   ENDIF"></textarea>
+                </div>
+                
+                <!-- Error message box -->
+                <div id="plc-coding-error-msg" style="color: #ff1744; font-size: 12px; padding: 8px 12px; background: rgba(255, 23, 68, 0.08); border-left: 4px solid #ff1744; font-family: monospace; display: none; border-radius: 4px;"></div>
+
+                <!-- Syntax Helper / Cheat Sheet -->
+                <div style="background: rgba(0, 176, 255, 0.02); border: 1px solid rgba(0, 176, 255, 0.15); border-radius: 6px; padding: 10px 12px; font-size: 11px;">
+                    <strong style="color: #00b0ff; text-transform: uppercase; font-size: 10px; display: block; margin-bottom: 6px; letter-spacing: 0.5px;">Instruction Set Cheat Sheet</strong>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; color: #8892b0; font-family: monospace;">
+                        <div>• <code style="color: #00e5ff;">IF cond THEN ... ENDIF</code></div>
+                        <div>• <code style="color: #00e5ff;">IF cond THEN ... ELSE ... ENDIF</code></div>
+                        <div>• <code style="color: #00e5ff;">var = value</code> (assignment)</div>
+                        <div>• <code style="color: #00e5ff;">IN(channel)</code> (read input value)</div>
+                        <div>• <code style="color: #00e5ff;">OUT(channel) = value</code> (write output)</div>
+                        <div>• Operators: <code style="color: #00e5ff;">&gt;, &lt;, &gt;=, &lt;=, ==, !=, +, -, *, /</code></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Pane: Live I/O Channels Monitor -->
+            <div style="flex: 1.2; display: flex; flex-direction: column; gap: 16px; background: #0b0f14; border: 1px solid #1a222d; border-radius: 6px; padding: 15px; overflow-y: auto;">
+                <div>
+                    <h3 style="margin-top: 0; margin-bottom: 4px; color: #00b0ff; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">I/O Channel Monitor</h3>
+                    <p style="margin: 0; font-size: 11px; color: #5f6c7d;">Live status of data grid nodes connected via Quartz cables.</p>
+                </div>
+
+                <!-- Inputs Section -->
+                <div>
+                    <div style="font-size: 11px; font-weight: bold; color: #76ff03; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; border-bottom: 1px solid rgba(118,255,3,0.15); padding-bottom: 4px;">Detected Inputs (IN)</div>
+                    <div id="plc-monitor-inputs" style="display: flex; flex-direction: column; gap: 6px;">
+                        <div style="color: #5f6c7d; font-size: 12px; font-style: italic;">No input nodes detected on data grid.</div>
+                    </div>
+                </div>
+
+                <!-- Outputs Section -->
+                <div>
+                    <div style="font-size: 11px; font-weight: bold; color: #ff1744; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; border-bottom: 1px solid rgba(255,23,68,0.15); padding-bottom: 4px;">Detected Outputs (OUT)</div>
+                    <div id="plc-monitor-outputs" style="display: flex; flex-direction: column; gap: 6px;">
+                        <div style="color: #5f6c7d; font-size: 12px; font-style: italic;">No output nodes detected on data grid.</div>
+                    </div>
+                </div>
+                
+                <!-- Internal Variables / State Monitor -->
+                <div style="margin-top: auto;">
+                    <div style="font-size: 11px; font-weight: bold; color: #ffeb3b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; border-bottom: 1px solid rgba(255,235,59,0.15); padding-bottom: 4px;">Internal Variables</div>
+                    <div id="plc-monitor-variables" style="display: flex; flex-direction: column; gap: 4px; font-family: monospace; font-size: 12px; color: #b0bec5; max-height: 100px; overflow-y: auto;">
+                        <div style="color: #5f6c7d; font-style: italic;">None initialized.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Bar -->
+        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px; margin-top: 15px;">
+            <div style="font-size: 12px; color: #8892b0; display: flex; align-items: center; gap: 15px;">
+                <span>Press <span class="key" style="color: #00b0ff; border-color: #00b0ff;">E</span> or <span class="key" style="color: #00b0ff; border-color: #00b0ff;">ESC</span> to close</span>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button onclick="togglePlcUI(null)" style="padding: 8px 16px; background: transparent; color: #8892b0; border: 1px solid #1a222d; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.02)';" onmouseout="this.style.background='transparent';">Cancel</button>
+                <button onclick="savePlcCodingScript()" style="padding: 8px 24px; background: #00b0ff; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; box-shadow: 0 0 12px rgba(0, 176, 255, 0.3); transition: all 0.2s;" onmouseover="this.style.background='#0091ea'; this.style.boxShadow='0 0 18px rgba(0, 176, 255, 0.5)';" onmouseout="this.style.background='#00b0ff'; this.style.boxShadow='0 0 12px rgba(0, 176, 255, 0.3)';">Save & Compile</button>
+            </div>
+        </div>
+    </div>
 `);
 
         // Inject Crafter/Requester options into standard machine UI
@@ -5073,6 +5361,75 @@
         </div>
         <div style="font-size:11px; color:#888; margin-top:4px;">Maintains this item amount in digital storage automatically.</div>
     </div>
+
+    <div id="gp-input-ui" style="display: none; margin-top: 15px; border-top: 2px solid #76ff03; padding-top: 15px; background: rgba(118, 255, 3, 0.02); padding: 12px; border-radius: 6px;">
+        <strong style="color:#76ff03; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">GP Input Node Setup</strong>
+        <div style="display: flex; gap: 10px; margin-top: 8px; align-items: flex-end;">
+            <div style="flex: 1;">
+                <span style="font-size:11px; color:#888;">Channel ID:</span><br>
+                <input type="number" id="gp-in-channel" style="width: 100%; padding:6px; background:#111; color:#fff; border:1px solid #333; border-radius:4px; margin-top:3px; box-sizing: border-box;" value="0">
+            </div>
+            <div style="flex: 2;">
+                <span style="font-size:11px; color:#888;">Target Attribute / Item:</span><br>
+                <input type="text" id="gp-in-item" style="width: 100%; padding:6px; background:#111; color:#fff; border:1px solid #333; border-radius:4px; margin-top:3px; box-sizing: border-box;" placeholder="e.g. steel_ingot or energy">
+            </div>
+            <button onclick="saveGpInput()" style="padding:6px 14px; background:#76ff03; color:#000; border:none; border-radius:4px; cursor:pointer; font-weight:bold; font-size:12px; height:32px; box-shadow: 0 0 8px rgba(118, 255, 3, 0.3);">Save</button>
+        </div>
+        <div style="font-size:11px; color:#777; margin-top:6px;">Reads digital storage item count or network state (e.g. <code style="color:#ccc;">energy</code>, <code style="color:#ccc;">powerDemand</code>, <code style="color:#ccc;">machines</code>, <code style="color:#ccc;">working</code>, <code style="color:#ccc;">idle</code>).</div>
+        <div id="gp-in-val-disp" style="font-size:13px; color:#76ff03; margin-top:10px; font-family: monospace; background: rgba(0,0,0,0.2); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(118, 255, 3, 0.1); display: inline-block;">Current Value: 0</div>
+    </div>
+
+    <div id="gp-output-ui" style="display: none; margin-top: 15px; border-top: 2px solid #ff1744; padding-top: 15px; background: rgba(255, 23, 68, 0.02); padding: 12px; border-radius: 6px;">
+        <strong style="color:#ff1744; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">GP Output Node Setup</strong>
+        <div style="display: flex; gap: 10px; margin-top: 8px; align-items: flex-end;">
+            <div style="flex: 1;">
+                <span style="font-size:11px; color:#888;">Channel ID:</span><br>
+                <input type="number" id="gp-out-channel" style="width: 100%; padding:6px; background:#111; color:#fff; border:1px solid #333; border-radius:4px; margin-top:3px; box-sizing: border-box;" value="0">
+            </div>
+            <button onclick="saveGpOutput()" style="padding:6px 14px; background:#ff1744; color:#fff; border:none; border-radius:4px; cursor:pointer; font-weight:bold; font-size:12px; height:32px; box-shadow: 0 0 8px rgba(255, 23, 68, 0.3);">Save</button>
+        </div>
+        <div id="gp-out-val-disp" style="font-size:13px; color:#ff1744; margin-top:10px; font-family: monospace; background: rgba(0,0,0,0.2); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(255, 23, 68, 0.1); display: inline-block;">Current Value: 0</div>
+    </div>
+
+    <div id="pgp-input-ui" style="display: none; margin-top: 15px; border-top: 2px solid #b2ff59; padding-top: 15px; background: rgba(178, 255, 89, 0.02); padding: 12px; border-radius: 6px;">
+        <strong style="color:#b2ff59; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">Physical GP Input Setup</strong>
+        <div style="display: flex; gap: 10px; margin-top: 8px; align-items: flex-end;">
+            <div style="flex: 1;">
+                <span style="font-size:11px; color:#888;">Channel ID:</span><br>
+                <input type="number" id="pgp-in-channel" style="width: 100%; padding:6px; background:#111; color:#fff; border:1px solid #333; border-radius:4px; margin-top:3px; box-sizing: border-box;" value="0">
+            </div>
+            <div style="flex: 2;">
+                <span style="font-size:11px; color:#888;">Target Attribute:</span><br>
+                <input type="text" id="pgp-in-item" style="width: 100%; padding:6px; background:#111; color:#fff; border:1px solid #333; border-radius:4px; margin-top:3px; box-sizing: border-box;" placeholder="energy, heat, timer, waste, fuelTime, or item name">
+            </div>
+            <button onclick="savePgpInput()" style="padding:6px 14px; background:#b2ff59; color:#000; border:none; border-radius:4px; cursor:pointer; font-weight:bold; font-size:12px; height:32px; box-shadow: 0 0 8px rgba(178, 255, 89, 0.3);">Save</button>
+        </div>
+        <div style="font-size:11px; color:#777; margin-top:6px;">Supported: <code style="color:#ccc;">energy</code>, <code style="color:#ccc;">heat</code>, <code style="color:#ccc;">timer</code>, <code style="color:#ccc;">enabled</code>, <code style="color:#ccc;">fuelTime</code>, <code style="color:#ccc;">waste</code>, or item name directly.</div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; flex-wrap: wrap; gap: 8px;">
+            <div id="pgp-in-val-disp" style="font-size:13px; color:#b2ff59; font-family: monospace; background: rgba(0,0,0,0.2); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(178, 255, 89, 0.1);">Current Value: 0</div>
+            <div id="pgp-in-target-disp" style="font-size:12px; color:#aaa; font-family: monospace; background: rgba(0,0,0,0.25); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.05);">Target Machine: None</div>
+        </div>
+    </div>
+
+    <div id="pgp-output-ui" style="display: none; margin-top: 15px; border-top: 2px solid #ff5252; padding-top: 15px; background: rgba(255, 82, 82, 0.02); padding: 12px; border-radius: 6px;">
+        <strong style="color:#ff5252; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px;">Physical GP Output Setup</strong>
+        <div style="display: flex; gap: 10px; margin-top: 8px; align-items: flex-end;">
+            <div style="flex: 1;">
+                <span style="font-size:11px; color:#888;">Channel ID:</span><br>
+                <input type="number" id="pgp-out-channel" style="width: 100%; padding:6px; background:#111; color:#fff; border:1px solid #333; border-radius:4px; margin-top:3px; box-sizing: border-box;" value="0">
+            </div>
+            <div style="flex: 2;">
+                <span style="font-size:11px; color:#888;">Target Attribute:</span><br>
+                <select id="pgp-out-item" style="width: 100%; padding:6px; background:#111; color:#fff; border:1px solid #333; border-radius:4px; margin-top:3px; box-sizing: border-box; height: 32px;"><option value="enabled">enabled</option></select>
+            </div>
+            <button onclick="savePgpOutput()" style="padding:6px 14px; background:#ff5252; color:#fff; border:none; border-radius:4px; cursor:pointer; font-weight:bold; font-size:12px; height:32px; box-shadow: 0 0 8px rgba(255, 82, 82, 0.3);">Save</button>
+        </div>
+        <div style="font-size:11px; color:#777; margin-top:6px;">Allows disabling the machine containing the port box by sending <code style="color:#ccc;">0</code>.</div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; flex-wrap: wrap; gap: 8px;">
+            <div id="pgp-out-val-disp" style="font-size:13px; color:#ff5252; font-family: monospace; background: rgba(0,0,0,0.2); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(255, 82, 82, 0.1);">Current Value: 0</div>
+            <div id="pgp-out-target-disp" style="font-size:12px; color:#aaa; font-family: monospace; background: rgba(0,0,0,0.25); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.05);">Target Machine: None</div>
+        </div>
+    </div>
 `);
 
         // ── 5. EXTEND UI FUNCTIONS ──
@@ -5090,6 +5447,10 @@
             // Display our new custom UIs based on machine type
             document.getElementById('crafter-ui').style.display = (currentOpenMachine.type === 'machine_digital_crafter') ? 'block' : 'none';
             document.getElementById('requester-ui').style.display = (currentOpenMachine.type === 'machine_digital_requester') ? 'block' : 'none';
+            document.getElementById('gp-input-ui').style.display = (currentOpenMachine.type === 'machine_gp_input') ? 'block' : 'none';
+            document.getElementById('gp-output-ui').style.display = (currentOpenMachine.type === 'machine_gp_output') ? 'block' : 'none';
+            document.getElementById('pgp-input-ui').style.display = (currentOpenMachine.type === 'machine_pgp_input') ? 'block' : 'none';
+            document.getElementById('pgp-output-ui').style.display = (currentOpenMachine.type === 'machine_pgp_output') ? 'block' : 'none';
 
             // Enable generic filter box for Export Downlink
             const filterUi = document.getElementById('machine-filters');
@@ -5119,6 +5480,58 @@
                 document.getElementById('req-item').value = currentOpenMachine.reqItem || '';
                 document.getElementById('req-qty').value = currentOpenMachine.reqQty || '';
                 document.getElementById('machine-active-recipe').innerHTML = `<em>Keeping ${currentOpenMachine.reqQty || 0}x ${currentOpenMachine.reqItem || 'nothing'} in stock.</em>`;
+            }
+
+            // Bind GP Input Values
+            if (currentOpenMachine.type === 'machine_gp_input') {
+                document.getElementById('gp-in-channel').value = currentOpenMachine.channelId !== undefined ? currentOpenMachine.channelId : 0;
+                document.getElementById('gp-in-item').value = currentOpenMachine.targetItem || '';
+                document.getElementById('gp-in-val-disp').innerText = "Current Value: " + (currentOpenMachine.currentValue || 0);
+            }
+
+            // Bind GP Output Values
+            if (currentOpenMachine.type === 'machine_gp_output') {
+                document.getElementById('gp-out-channel').value = currentOpenMachine.channelId !== undefined ? currentOpenMachine.channelId : 0;
+                document.getElementById('gp-out-val-disp').innerText = "Current Value: " + (currentOpenMachine.currentValue || 0);
+            }
+
+            // Helper to find target machine
+            let getPgpTargetInfo = (m) => {
+                let rot = m.def.rotations[m.rotIndex];
+                if (rot && rot.outX !== null && rot.outY !== null) {
+                    let tx = m.x + rot.outX;
+                    let ty = m.y + rot.outY;
+                    if (typeof worldMap !== 'undefined' && typeof WORLD_SIZE !== 'undefined') {
+                        let tId = worldMap[ty * WORLD_SIZE + tx];
+                        if (tId >= 50000) {
+                            let target = activeMachines[tId - 50000];
+                            if (target) {
+                                return target.def.name + ` (${target.x}, ${target.y})`;
+                            }
+                        }
+                    }
+                }
+                return "None (Check Port Alignment)";
+            };
+
+            // Bind PGP Input Values
+            if (currentOpenMachine.type === 'machine_pgp_input') {
+                document.getElementById('pgp-in-channel').value = currentOpenMachine.channelId !== undefined ? currentOpenMachine.channelId : 0;
+                document.getElementById('pgp-in-item').value = currentOpenMachine.targetItem || '';
+                document.getElementById('pgp-in-val-disp').innerText = "Current Value: " + (currentOpenMachine.currentValue || 0);
+                
+                let targetName = getPgpTargetInfo(currentOpenMachine);
+                document.getElementById('pgp-in-target-disp').innerHTML = "Target Machine: <strong style='color:#b2ff59;'>" + targetName + "</strong>";
+            }
+
+            // Bind PGP Output Values
+            if (currentOpenMachine.type === 'machine_pgp_output') {
+                document.getElementById('pgp-out-channel').value = currentOpenMachine.channelId !== undefined ? currentOpenMachine.channelId : 0;
+                document.getElementById('pgp-out-item').value = currentOpenMachine.targetItem || 'enabled';
+                document.getElementById('pgp-out-val-disp').innerText = "Current Value: " + (currentOpenMachine.currentValue || 0);
+                
+                let targetName = getPgpTargetInfo(currentOpenMachine);
+                document.getElementById('pgp-out-target-disp').innerHTML = "Target Machine: <strong style='color:#ff5252;'>" + targetName + "</strong>";
             }
         };
 
@@ -5180,6 +5593,39 @@
             floatText(currentOpenMachine.x, currentOpenMachine.y, "Requester Configured!", "#e91e63");
         };
 
+
+
+        window.saveGpInput = function () {
+            if (!currentOpenMachine || currentOpenMachine.type !== 'machine_gp_input') return;
+            currentOpenMachine.channelId = parseInt(document.getElementById('gp-in-channel').value) || 0;
+            currentOpenMachine.targetItem = document.getElementById('gp-in-item').value.trim();
+            updateMachineUI();
+            floatText(currentOpenMachine.x, currentOpenMachine.y, "GP Input Saved!", "#76ff03");
+        };
+
+        window.saveGpOutput = function () {
+            if (!currentOpenMachine || currentOpenMachine.type !== 'machine_gp_output') return;
+            currentOpenMachine.channelId = parseInt(document.getElementById('gp-out-channel').value) || 0;
+            updateMachineUI();
+            floatText(currentOpenMachine.x, currentOpenMachine.y, "GP Output Saved!", "#ff1744");
+        };
+
+        window.savePgpInput = function () {
+            if (!currentOpenMachine || currentOpenMachine.type !== 'machine_pgp_input') return;
+            currentOpenMachine.channelId = parseInt(document.getElementById('pgp-in-channel').value) || 0;
+            currentOpenMachine.targetItem = document.getElementById('pgp-in-item').value.trim();
+            updateMachineUI();
+            floatText(currentOpenMachine.x, currentOpenMachine.y, "PGP Input Saved!", "#b2ff59");
+        };
+
+        window.savePgpOutput = function () {
+            if (!currentOpenMachine || currentOpenMachine.type !== 'machine_pgp_output') return;
+            currentOpenMachine.channelId = parseInt(document.getElementById('pgp-out-channel').value) || 0;
+            currentOpenMachine.targetItem = document.getElementById('pgp-out-item').value;
+            updateMachineUI();
+            floatText(currentOpenMachine.x, currentOpenMachine.y, "PGP Output Saved!", "#ff5252");
+        };
+
         // ── 6. GRID CRAFTING TERMINAL LOGIC ──
 
         let gridTerminalVisible = false;
@@ -5203,6 +5649,7 @@
             _origCloseAllMenus_AE();
             gridTerminalVisible = false;
             currentGridTerminal = null;
+            currentOpenMachine = null;
             let e = document.getElementById('grid-crafting-ui');
             if (e) e.style.display = 'none';
             let mp = document.getElementById('mp-ui');
@@ -5529,7 +5976,10 @@
                     partnerId: m.partnerId, decoherent: m.decoherent,
                     // ADDED MISSING CONFIG FIELDS:
                     pattern: m.pattern, reqItem: m.reqItem, reqQty: m.reqQty, jobs: m.jobs, currentJob: m.currentJob,
-                    ontoIndex: m.ontoIndex, fuelTime: m.fuelTime, wasteTimer: m.wasteTimer
+                    ontoIndex: m.ontoIndex, fuelTime: m.fuelTime, wasteTimer: m.wasteTimer,
+                    plcScript: m.plcScript, plcVariables: m.plcVariables, plcEnv: m.plcEnv, plcError: m.plcError,
+                    channelId: m.channelId, targetItem: m.targetItem, currentValue: m.currentValue,
+                    disabledByPLC: m.disabledByPLC
                 } : null),
                 belts: itemsOnBelts.map(i => ({
                     x: i.x, y: i.y, id: i.id, progress: i.progress,

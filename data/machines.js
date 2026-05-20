@@ -1941,12 +1941,34 @@ export const MACHINE_DEFS = {
         updateOverride: function (m, r, dt) {
             if (m.timer >= 1.0) {
                 m.timer = 0;
+                m.currentValue = 0;
                 if (m.dataGrid && m.targetItem) {
                     let cdh = m.dataGrid.machines.find(x => x && x.type === 'machine_cdh');
-                    if (cdh && cdh.digiItems) {
-                        m.currentValue = cdh.digiItems[m.targetItem] || 0;
-                    } else {
-                        m.currentValue = 0;
+                    if (cdh) {
+                        let target = m.targetItem.trim();
+                        if (target === 'energy' || target === 'powerStored') {
+                            m.currentValue = cdh.cdhData ? (cdh.cdhData.powerStored || 0) : 0;
+                        } else if (target === 'powerDemand') {
+                            m.currentValue = cdh.cdhData ? (cdh.cdhData.powerDemand || 0) : 0;
+                        } else if (target === 'machines') {
+                            m.currentValue = cdh.cdhData ? (cdh.cdhData.machines || 0) : 0;
+                        } else if (target === 'working') {
+                            m.currentValue = cdh.cdhData ? (cdh.cdhData.working || 0) : 0;
+                        } else if (target === 'idle') {
+                            m.currentValue = cdh.cdhData ? (cdh.cdhData.idle || 0) : 0;
+                        } else if (target === 'defense') {
+                            m.currentValue = cdh.cdhData ? (cdh.cdhData.defense || 0) : 0;
+                        } else if (target === 'hasRadar') {
+                            m.currentValue = cdh.cdhData ? (cdh.cdhData.hasRadar ? 1 : 0) : 0;
+                        } else if (target === 'bottlePower') {
+                            m.currentValue = cdh.cdhData ? (cdh.cdhData.bottlePower || 0) : 0;
+                        } else if (target === 'bottleInput') {
+                            m.currentValue = cdh.cdhData ? (cdh.cdhData.bottleInput || 0) : 0;
+                        } else if (target === 'bottleOutput') {
+                            m.currentValue = cdh.cdhData ? (cdh.cdhData.bottleOutput || 0) : 0;
+                        } else {
+                            m.currentValue = cdh.digiItems ? (cdh.digiItems[target] || 0) : 0;
+                        }
                     }
                 }
             }
@@ -1974,17 +1996,63 @@ export const MACHINE_DEFS = {
                         if (tId >= 50000 && typeof window.getActiveMachines === 'function') {
                             let target = window.getActiveMachines()[tId - 50000];
                             if (target) {
-                                if (m.targetItem === 'energy') {
-                                    m.currentValue = target.energy || 0;
-                                } else if (m.targetItem === 'heat') {
+                                let key = m.targetItem.trim();
+                                if (key === 'energy') {
+                                    if (target._isStandardWasm && typeof gameState !== 'undefined') {
+                                        m.currentValue = gameState.get_machine_energy(target.id) || 0;
+                                    } else {
+                                        m.currentValue = target.energy || 0;
+                                    }
+                                } else if (key === 'heat' || key === 'temperature') {
                                     m.currentValue = target.heat || 0;
-                                } else if (m.targetItem === 'timer') {
-                                    m.currentValue = target.timer || 0;
-                                } else if (m.targetItem === 'enabled') {
+                                } else if (key === 'timer' || key === 'progress') {
+                                    if (target._isStandardWasm && typeof gameState !== 'undefined') {
+                                        m.currentValue = gameState.get_machine_timer(target.id) || 0;
+                                    } else {
+                                        m.currentValue = target.timer || 0;
+                                    }
+                                } else if (key === 'enabled') {
                                     m.currentValue = target.disabledByPLC ? 0 : 1;
-                                } else if (m.targetItem.startsWith('item:')) {
-                                    let item = m.targetItem.substring(5);
-                                    if (target.inv) m.currentValue = target.inv[item] || 0;
+                                } else if (key === 'fuelTime') {
+                                    m.currentValue = target.fuelTime || 0;
+                                } else if (key === 'waste') {
+                                    let wCount = 0;
+                                    if (target.out2Buffer && target.out2Buffer['nuclear_waste']) wCount += target.out2Buffer['nuclear_waste'];
+                                    if (target.inv && target.inv['nuclear_waste']) wCount += target.inv['nuclear_waste'];
+                                    m.currentValue = wCount;
+                                } else {
+                                    let item = key;
+                                    if (item.startsWith('item:')) {
+                                        item = item.substring(5);
+                                    }
+                                    if (target._isStandardWasm && typeof gameState !== 'undefined') {
+                                        let invFlat = gameState.get_machine_inv_flat(target.id);
+                                        let count = 0;
+                                        if (typeof ITEM_TO_ID !== 'undefined' && ITEM_TO_ID[item]) {
+                                            let idVal = ITEM_TO_ID[item];
+                                            for (let i = 0; i < invFlat.length; i += 2) {
+                                                if (invFlat[i] === idVal) {
+                                                    count = invFlat[i + 1];
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        m.currentValue = count;
+                                    } else {
+                                        let count = 0;
+                                        let foundItem = false;
+                                        if (target.inv && target.inv[item] !== undefined) { count += target.inv[item]; foundItem = true; }
+                                        if (target.outBuffer && target.outBuffer[item] !== undefined) { count += target.outBuffer[item]; foundItem = true; }
+                                        if (target.out2Buffer && target.out2Buffer[item] !== undefined) { count += target.out2Buffer[item]; foundItem = true; }
+                                        
+                                        if (foundItem) {
+                                            m.currentValue = count;
+                                        } else if (typeof target[key] === 'number') {
+                                            m.currentValue = target[key];
+                                        } else {
+                                            m.currentValue = 0;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -2010,7 +2078,11 @@ export const MACHINE_DEFS = {
                             let target = window.getActiveMachines()[tId - 50000];
                             if (target) {
                                 if (m.targetItem === 'enabled') {
-                                    target.disabledByPLC = (m.currentValue === 0);
+                                    if (typeof window.setMachineDisabledByPLC === 'function') {
+                                        window.setMachineDisabledByPLC(target, m.currentValue === 0);
+                                    } else {
+                                        target.disabledByPLC = (m.currentValue === 0);
+                                    }
                                 }
                             }
                         }
