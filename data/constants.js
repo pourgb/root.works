@@ -29,4 +29,4 @@ export const TILE_DEFS_RAW = [
         [55, '=', '#84ffff']  // Reinforced Glass Floor
     ];
 export const TILE_DEFS = TILE_DEFS_RAW.map(t => ({ id: t[0], char: t[1], color: t[2] }));
-export const ORES = ['iron', 'copper', 'gold', 'silver', 'nickel', 'zinc', 'aluminium', 'lead', 'tin'];
+export const ORES = ['iron', 'copper', 'gold', 'silver', 'nickel', 'zinc', 'aluminium', 'lead', 'tin', 'titanium'];

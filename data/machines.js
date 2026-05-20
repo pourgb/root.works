@@ -224,14 +224,14 @@ export const MACHINE_DEFS = {
         id: 'machine_furnace_coal', name: 'Coal Furnace', color: '#424242',
         rotations: genRot4({ w: 4, h: 4, art: ["/--\\", "|==|", "|==|", "\\FF/"], outX: 1, outY: 4 }),
         energy: { type: 'burner', fuel: 'coal', usage: 1 }, processTime: 5.0,
-        recipes: ORES.filter(o => o !== 'iron').map(o => ({ in: { [`${o}_ore`]: 1 }, out: { [o === 'iron' ? 'pig_iron' : `${o}_ingot`]: 1 }, chanceOut: { item: 'ash', chance: 0.2 } })),
+        recipes: ORES.map(o => ({ in: { [`${o}_ore`]: 1 }, out: { [`${o}_ingot`]: 1 }, chanceOut: { item: 'ash', chance: 0.2 } })),
         renderAnim: Anim.waveAlt('=', '#ff5722')
     },
     'machine_furnace_electric': {
         id: 'machine_furnace_electric', name: 'Electric Furnace', color: '#0288d1',
         rotations: genRot4({ w: 4, h: 4, art: ["/--\\", "|==|", "|==|", "\\EE/"], outX: 1, outY: 4 }),
         energy: { type: 'electric', usage: 10 }, processTime: 3.0,
-        recipes: ORES.filter(o => o !== 'iron').map(o => ({ in: { [`${o}_ore`]: 1 }, out: { [`${o}_ingot`]: 1 } })),
+        recipes: ORES.map(o => ({ in: { [`${o}_ore`]: 1 }, out: { [`${o}_ingot`]: 1 } })),
         renderAnim: Anim.waveAlt('=', '#00bcd4')
     },
     'machine_press_coal': {
@@ -242,7 +242,8 @@ export const MACHINE_DEFS = {
             { in: { 'iron_ingot': 1 }, out: { 'iron_plate': 1 } }, { in: { 'copper_ingot': 1 }, out: { 'copper_plate': 1 } },
             { in: { 'brass_ingot': 1 }, out: { 'brass_plate': 1 } }, { in: { 'bronze_ingot': 1 }, out: { 'bronze_plate': 1 } },
             { in: { 'steel_ingot': 1 }, out: { 'steel_plate': 1 } }, { in: { 'lead_ingot': 1 }, out: { 'lead_plate': 1 } },
-            { in: { 'tin_ingot': 1 }, out: { 'tin_plate': 1 } }, { in: { 'aluminium_ingot': 1 }, out: { 'aluminium_plate': 1 } }
+            { in: { 'tin_ingot': 1 }, out: { 'tin_plate': 1 } }, { in: { 'aluminium_ingot': 1 }, out: { 'aluminium_plate': 1 } },
+            { in: { 'titanium_ingot': 1 }, out: { 'titanium_hull_plate': 1 } }
         ],
         renderAnim: Anim.glow('P', '_')
     },
@@ -1655,236 +1656,6 @@ export const MACHINE_DEFS = {
         ],
         renderAnim: Anim.wave('~', '#ff5722')
     },
-    'machine_defense_radar': {
-        id: 'machine_defense_radar', name: 'Defense Radar', color: '#00e676',
-        rotations: [{ w: 3, h: 3, art: [" / \\ ", "|(o)|", " \\ / "], outX: null, outY: null }],
-        energy: { type: 'electric', usage: 50 },
-        isWorking: (m) => (m.energy || 0) >= 50,
-        updateOverride: function (m, r, dt) {
-            if (m.energy >= 50) m.energy -= 50;
-        }
-    },
-    'machine_defense_node': {
-        id: 'machine_defense_node', name: 'Signal Node', color: '#00c853',
-        rotations: genRot4({ w: 1, h: 1, art: ["^"], outX: null, outY: null }),
-        energy: { type: 'none' }
-    },
-    'machine_chain_gunner': {
-        id: 'machine_chain_gunner', name: 'Chain Gunner', color: '#2e7d32',
-        rotations: [{ w: 2, h: 2, art: ["!!", "##"], outX: null, outY: null }],
-        energy: { type: 'electric', usage: 20 },
-        updateOverride: function (m, r, dt) {
-            if (m.timer >= 0.2 && (m.energy || 0) >= 5 && m.inv['iron_pellet'] >= 1) {
-                // FIX 1: Safely ask the radar if it's working using isWorking()
-                let radarActive = m.dataGrid && m.dataGrid.machines.some(rm => rm && rm.type === 'machine_defense_radar' && rm.def.isWorking(rm));
-
-                if (radarActive) {
-                    let target = findNearestMonster(m.x, m.y, 25);
-                    if (target) { m.timer = 0; m.energy -= 5; m.inv['iron_pellet']--; fireProjectile(m.x + 0.5, m.y + 0.5, target, 15, 40, '#ffd700'); }
-                }
-            }
-        }
-    },
-    'machine_magnetic_tape_drive': {
-        id: 'machine_magnetic_tape_drive', name: 'Magnetic Tape Drive', color: '#607d8b',
-        rotations: [{
-            w: 7, h: 8, art: [
-                "/-----\\",
-                "| [O] |",
-                "| | | |",
-                "| [O] |",
-                "|     |",
-                "|[---]|",
-                "|[###]|",
-                "\\-----/"
-            ], outX: null, outY: null
-        }],
-        energy: { type: 'electric', usage: 5 },
-        isWorking: (m) => (m.energy || 0) >= 5,
-        renderAnim: Anim.tapeSpin('O', '#00e676')
-    },
-    'machine_processing_computer': {
-        id: 'machine_processing_computer', name: 'Processing Computer', color: '#37474f',
-        rotations: [{
-            w: 5, h: 7, art: [
-                "/---\\",
-                "|[*]|",
-                "|[*]|",
-                "|[*]|",
-                "|   |",
-                "|[#]|",
-                "\\---/"
-            ], outX: null, outY: null
-        }],
-        energy: { type: 'electric', usage: 10 },
-        isWorking: (m) => (m.energy || 0) >= 10,
-        renderAnim: function (c, t) {
-            if (c === '*') {
-                const colors = ['#f44336', '#4caf50', '#ffeb3b'];
-                const col = colors[Math.floor(performance.now() / 300) % 3];
-                return { char: '*', color: col };
-            }
-            return null;
-        }
-    },
-    'machine_planet_terminal': {
-        id: 'machine_planet_terminal', name: 'Planet Terminal', color: '#455a64',
-        rotations: [{
-            w: 9, h: 4, art: [
-                "/-------\\",
-                "|[MARS ]|",
-                "|       |",
-                "\\-------/"
-            ], outX: null, outY: null
-        }],
-        energy: { type: 'electric', usage: 15 },
-        isWorking: function (m) {
-            if ((m.energy || 0) < 15) return false;
-            if (!m.analogGrid) return false;
-            let computerCount = 0;
-            let tapeDriveCount = 0;
-            for (let rm of m.analogGrid.machines) {
-                if (!rm) continue;
-                if (rm.type === 'machine_processing_computer' && rm.def.isWorking(rm)) computerCount++;
-                if (rm.type === 'machine_magnetic_tape_drive' && rm.def.isWorking(rm)) tapeDriveCount++;
-            }
-            return computerCount >= 4 && tapeDriveCount >= 8;
-        }
-    },
-    'machine_parabolic_dish': {
-        id: 'machine_parabolic_dish', name: 'Parabolic Dish', color: '#90a4ae',
-        rotations: [{
-            w: 15, h: 9, art: [
-                "/-------------\\",
-                "|             |",
-                "|             |",
-                "|      |      |",
-                "|  ----*----  |",
-                "|      |      |",
-                "|             |",
-                "|             |",
-                "\\-------------/ "
-            ], outX: null, outY: null
-        }],
-        energy: { type: 'electric', usage: 50 },
-        isWorking: (m) => (m.energy || 0) >= 50,
-        renderAnim: function (c, t) {
-            if (c === '*') return { char: '*', color: Math.sin(performance.now() / 200) > 0 ? '#00e5ff' : '#00acc1' };
-            return null;
-        }
-    },
-    'machine_construction_crane': {
-        id: 'machine_construction_crane', name: 'Construction Crane', color: '#fbc02d',
-        rotations: [{
-            w: 5, h: 5, art: [
-                " [|] ",
-                " [|] ",
-                " [|] ",
-                " [|] ",
-                "==^=="
-            ], outX: null, outY: null
-        }],
-        energy: { type: 'electric', usage: 50000, capacity: 100000 },
-        maxEnergy: 100000,
-        acceptsItem: (m, item) => item === 'steel_plate'
-    },
-    'machine_fuel_mixer': {
-        id: 'machine_fuel_mixer', name: 'Fuel Mixer', color: '#4fc3f7',
-        rotations: genRot4({ w: 4, h: 4, art: ["/--\\", "|MM|", "|MM|", "\\--/"], outX: 1, outY: 4 }),
-        energy: { type: 'electric', usage: 20 }, processTime: 5.0,
-        recipes: [{ in: { 'oxygen': 5, 'hydrogen': 5 }, out: { 'crude_rocket_fuel': 1 } }]
-    },
-    'machine_fuel_refinery': {
-        id: 'machine_fuel_refinery', name: 'Fuel Refinery', color: '#03a9f4',
-        rotations: genRot4({ w: 4, h: 4, art: ["/--\\", "|RR|", "|RR|", "\\--/"], outX: 1, outY: 4 }),
-        energy: { type: 'electric', usage: 40 }, processTime: 10.0,
-        recipes: [{ in: { 'crude_rocket_fuel': 1 }, out: { 'refined_rocket_fuel': 1 } }]
-    },
-    'machine_fuel_compressor': {
-        id: 'machine_fuel_compressor', name: 'Fuel Compressor', color: '#01579b',
-        rotations: genRot4({ w: 4, h: 4, art: ["/--\\", "|CC|", "|CC|", "\\--/"], outX: 1, outY: 4 }),
-        energy: { type: 'electric', usage: 80 }, processTime: 15.0,
-        recipes: [{ in: { 'refined_rocket_fuel': 1 }, out: { 'rocket_fuel': 1 } }]
-    },
-    'machine_rocket_silo_mega': {
-        id: 'machine_rocket_silo_mega', name: 'Mega Rocket Silo', color: '#37474f',
-        rotations: [{
-            w: 25, h: 25, art: [
-                "           /---\\           ",
-                "         /|     |\\         ",
-                "        / |     | \\        ",
-                "       /  |     |  \\       ",
-                "      |   | [X] |   |      ",
-                "      |   | [X] |   |      ",
-                "      |   | [X] |   |      ",
-                "      |   /--v--\\   |      ",
-                "     /|  /       \\  |\\     ",
-                "    / | | (#####) | | \\    ",
-                "   /  | | (#####) | |  \\   ",
-                "  |   | | (#####) | |   |  ",
-                "  |   | | (#####) | |   |  ",
-                "  |   | | (#####) | |   |  ",
-                "  |   |  \\_______/  |   |  ",
-                "  |   |      |      |   |  ",
-                "  |   |______|______|   |  ",
-                "  |  /               \\  |  ",
-                "  | /                 \\ |  ",
-                "  |/                   \\|  ",
-                "  |                     |  ",
-                "  |       |     |       |  ",
-                "  |      /       \\      |  ",
-                "  |   --/         \\--   |  ",
-                "  \\_____________________/  "
-            ],
-            outX: null, outY: null
-        }],
-        energy: { type: 'electric', usage: 200000 }, // High launch power
-        updateOverride: function (m, r, dt) {
-            m.energy = m.energy || 0;
-            if (m.energy >= 50000) { // Requirement to start launch
-                const hasRoverExp = (m.inv['rocket_rover'] >= 1 && m.inv['rocket_fuel'] >= 50 && m.inv['logic_tape'] >= 1);
-                const hasSatExp = (m.inv['rocket_satellite'] >= 1 && m.inv['rocket_fuel'] >= 20);
-
-                if (hasRoverExp || hasSatExp) {
-                    m.launchTimer = (m.launchTimer || 0) + dt;
-                    if (m.launchTimer >= 10.0) { // Longer launch for Mega
-                        m.launchTimer = 0;
-                        m.energy -= 50000;
-                        if (hasRoverExp) {
-                            m.inv['rocket_rover']--; m.inv['rocket_fuel'] -= 50; m.inv['logic_tape']--;
-                            window.launchRoverToMars();
-                        } else {
-                            m.inv['rocket_satellite']--; m.inv['rocket_fuel'] -= 20;
-                            window.launchSatellite();
-                        }
-                    }
-                } else {
-                    m.launchTimer = 0;
-                }
-            }
-        },
-        renderAnim: function (c, t, m) {
-            if (m.launchTimer > 0) {
-                if (c === 'X' || c === '#') return { char: t === 0 ? '^' : '*', color: '#ff9800' };
-                if ('/\\|-'.includes(c)) return { color: t === 0 ? '#ff5722' : '#e64a19' };
-                if (c === ' ') if (Math.random() < 0.15) return { char: t === 0 ? 'o' : '.', color: '#90a4ae' };
-            }
-            const hasIngredients = (m.inv['rocket_rover'] >= 1 || m.inv['rocket_satellite'] >= 1);
-            if (hasIngredients && !m.launchTimer) if (c === 'X') return { color: '#00e676' };
-            return null;
-        }
-    },
-
-    'machine_mars_refinery': {
-        id: 'machine_mars_refinery', name: 'Planet-side Refinery', color: '#f44336',
-        rotations: genRot4({ w: 4, h: 4, art: ["/--\\", "|~~|", "|RR|", "\\-v/"], outX: 2, outY: 4 }),
-        energy: { type: 'electric', usage: 100 }, processTime: 5.0,
-        recipes: [
-            { in: { 'mars_iron_ore': 1, 'regolith': 2 }, out: { 'refined_mars_metal': 1 } },
-            { in: { 'mars_copper_ore': 1, 'regolith': 2 }, out: { 'refined_mars_metal': 1 } }
-        ],
-        renderAnim: Anim.wave('~', '#ff5722')
-    },
     'machine_cdh_plc': {
         id: 'machine_cdh_plc', name: 'PLC Logic Processor', color: '#00b0ff',
         rotations: [{ w: 3, h: 3, art: ["/-\\", "|P|", "\\-/"], outX: null, outY: null }],
@@ -2177,7 +1948,7 @@ export const MACHINE_DEFS = {
                 'machine_coal_grinder': { id: 'machine_coal_grinder', name: 'Coal Grinder', color: '#424242', rotations: genRot4({ w: 3, h: 4, art: ["/-\\", "|C|", "|G|", "\\v/"], outX: 1, outY: 4 }, { w: 4, h: 3, art: ["/--\\", "<CG|", "\\--/"], outX: -1, outY: 1 }), energy: { type: 'burner', fuel: 'coal', usage: 1 }, processTime: 3.0, recipes: [{ in: { 'wheat': 3 }, out: { 'flour': 1 } }] },
                 'machine_manual_mixer': { id: 'machine_manual_mixer', name: 'Manual Mixer', color: '#8d6e63', rotations: genRot4({ w: 3, h: 3, art: ["/M\\", "|~|", "\\v/"], outX: 1, outY: 3 }), energy: { type: 'none' }, processTime: 8.0, recipes: [{ in: { 'flour': 1, 'water': 1 }, out: { 'dough': 1 } }] },
                 'machine_coal_mixer': { id: 'machine_coal_mixer', name: 'Coal Bowl Mixer', color: '#424242', rotations: genRot4({ w: 4, h: 4, art: ["/--\\", "|M~|", "|C~|", "\\-v/"], outX: 2, outY: 4 }), energy: { type: 'burner', fuel: 'coal', usage: 1 }, processTime: 3.0, recipes: [{ in: { 'flour': 1, 'water': 1 }, out: { 'dough': 1 } }] },
-                'machine_coal_brick_oven': { id: 'machine_coal_brick_oven', name: 'Coal Brick Oven', color: '#d84315', rotations: genRot4({ w: 4, h: 4, art: ["/--\\", "|BB|", "|OO|", "\\-v/"], outX: 2, outY: 4 }), energy: { type: 'burner', fuel: 'coal', usage: 1 }, processTime: 4.0, recipes: [{ in: { 'dough': 1 }, out: { 'bread': 1 } }] },
+                'machine_coal_brick_oven': { id: 'machine_coal_brick_oven', name: 'Coal Brick Oven', color: '#d84315', rotations: genRot4({ w: 4, h: 4, art: ["/--\\", "|BB|", "|OO|", "\\-v/"], outX: 2, outY: 4 }), energy: { type: 'burner', fuel: 'coal', usage: 1 }, processTime: 4.0, recipes: [{ in: { 'dough': 1 }, out: { 'bread': 1 } }, { in: { 'coal': 1 }, out: { 'coal_brick': 1 } }] },
                 'machine_water_filterer': { id: 'machine_water_filterer', name: 'Water Filterer', color: '#03a9f4', rotations: genRot4({ w: 3, h: 5, art: ["/W\\", "|~|", "|F|", "|F|", "\\v/"], outX: 1, outY: 5 }, { w: 5, h: 3, art: ["/---\\", "<FF~|", "\\W--/"], outX: -1, outY: 1 }), energy: { type: 'none' }, processTime: 5.0, recipes: [{ in: { 'water': 1 }, out: { 'drinking_water': 1 } }] },
                 'machine_rock_breaker': {
                 id: 'machine_rock_breaker', name: 'Heavy Rock Breaker', color: '#607d8b',
@@ -3487,11 +3258,17 @@ export const recipes = [
     { name: "Blank Magnetic Tape x5", env: "table", output: { id: "blank_tape", amount: 5 }, input: { "iron_plate": 2, "copper_wire": 10 } },
     { name: "Magnetic Tape Unit", env: "table", output: { id: "machine_magnetic_tape_drive", amount: 1 }, input: { "invar_casing": 2, "motor": 1, "copper_wire": 5 } },
     { name: "Crude Logic Engine", env: "table", output: { id: "machine_crude_logic_engine", amount: 1 }, input: { "invar_casing": 4, "vacuum_tube": 10, "heavy_relay": 5 } },
+    { name: "Vacuum Tube x5", env: "table", output: { id: "vacuum_tube", amount: 5 }, input: { "iron_plate": 10, "copper_wire": 10 } },
+    { name: "Heavy Relay x2", env: "table", output: { id: "heavy_relay", amount: 2 }, input: { "iron_plate": 10, "copper_wire": 20 } },
     { name: "Rocket Fuel x10", env: "table", output: { id: "rocket_fuel", amount: 10 }, input: { "petroleum_gas": 5, "oxygen": 5 } },
+    { name: "Fuel Mixer", env: "table", output: { id: "machine_fuel_mixer", amount: 1 }, input: { "steel_plate": 15, "motor": 2, "glass_pipe": 10 } },
+    { name: "Fuel Refinery", env: "table", output: { id: "machine_fuel_refinery", amount: 1 }, input: { "steel_plate": 20, "motor": 4, "steel_pipe": 10 } },
+    { name: "Fuel Compressor", env: "table", output: { id: "machine_fuel_compressor", amount: 1 }, input: { "titanium_hull_plate": 5, "motor": 6, "steel_pipe": 10 } },
     { name: "Heavy Rover", env: "table", output: { id: "heavy_rover", amount: 1 }, input: { "titanium_hull_plate": 10, "motor": 4, "compute_module": 1 } },
     { name: "Rocket Rover", env: "table", output: { id: "rocket_rover", amount: 1 }, input: { "heavy_rover": 1, "titanium_hull_plate": 5 } },
     { name: "Satellite", env: "table", output: { id: "satellite", amount: 1 }, input: { "compute_module": 1, "polished_silicon_wafer": 4, "crystal_lens": 2 } },
     { name: "Rocket Satellite", env: "table", output: { id: "rocket_satellite", amount: 1 }, input: { "satellite": 1, "titanium_hull_plate": 5 } },
+    { name: "Processing Computer", env: "table", output: { id: "machine_processing_computer", amount: 1 }, input: { "invar_casing": 5, "compute_module": 1, "steel_plate": 10, "quartz_cable": 10 } },
     { name: "Planet Terminal", env: "table", output: { id: "machine_planet_terminal", amount: 1 }, input: { "machine_processing_computer": 1, "machine_magnetic_tape_drive": 1, "steel_plate": 20 } },
     { name: "Analog Data Cable x5", env: "table", output: { id: "analog_cable", amount: 5 }, input: { "copper_wire": 5, "liquid_plastic": 2 } },
     { name: "PLC Logic Processor", env: "table", output: { id: "machine_cdh_plc", amount: 1 }, input: { "machine_processing_computer": 1, "cpu_ic": 2, "quartz_cable": 10 } },
@@ -3523,7 +3300,7 @@ export const recipes = [
     { name: "Nuclear Waste Storage", env: "table", output: { id: "machine_waste_storage", amount: 1 }, input: { "titanium_hull_plate": 10, "gold_lead_pipe": 10 } },
     { name: "Silver Pipe x5", env: "table", output: { id: "silver_pipe", amount: 5 }, input: { "silver_ingot": 2, "iron_plate": 1 } },
     { name: "Insulated Pipe x5", env: "table", output: { id: "insulated_pipe", amount: 5 }, input: { "iron_pipe": 5, "liquid_plastic": 2 } },
-    { name: "SiCu Cable x5", env: "table", output: { id: "sicu_cable", amount: 5 }, input: { "copper_wire": 5, "silicon_wafer": 1 } },
+    { name: "SiCu Cable x5", env: "table", output: { id: "sicu_cable", amount: 5 }, input: { "copper_wire": 5, "polished_silicon_wafer": 1 } },
     { name: "Particle Collider", env: "table", output: { id: "machine_particle_collider", amount: 1 }, input: { "titanium_hull_plate": 50, "hyper_wire": 50 } },
     { name: "Heavy Electric Pump", env: "table", output: { id: "machine_heavy_pump", amount: 1 }, input: { "machine_pumpjack": 1, "motor": 5 } },
     { name: "Atmospheric Condenser", env: "table", output: { id: "machine_atmospheric_condenser", amount: 1 }, input: { "machine_brass_boiler": 1, "titanium_hull_plate": 5 } },
@@ -3548,6 +3325,7 @@ export const recipes = [
     { name: "Drone Output", env: "table", output: { id: "machine_drone_output", amount: 1 }, input: { "iron_plate": 5, "item_pipe": 2 } },
     { name: "Advanced Carrier Station", env: "table", output: { id: "machine_advanced_drone_station", amount: 1 }, input: { "invar_casing": 10, "cpu_ic": 1, "motor": 4, "hyper_wire": 5 } },
     { name: "Rope x2", env: "hand", output: { id: "rope", amount: 2 }, input: { "fiber": 3 } },
+    { name: "Cloth", env: "hand", output: { id: "cloth", amount: 1 }, input: { "fiber": 4 } },
     { name: "Wood x2", env: "hand", output: { id: "wood", amount: 2 }, input: { "log": 1 } },
     { name: "Stick x4", env: "hand", output: { id: "stick", amount: 4 }, input: { "wood": 1 } },
     { name: "Wooden Axe", env: "hand", output: { id: "wooden_axe", amount: 1 }, input: { "wood": 3, "stick": 2, "rope": 1 } },
