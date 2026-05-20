@@ -1,4 +1,5 @@
-geminislop below for intro(please ignore the catgirl):
+geminislop below for intro(please ignore the catgirl)
+big note: game is unfinished(it never will be finished), so expect hardlocks due to recipes or something, just go into creative mode to bypass it, as of now yay.
 # ROOT.WORKS
 
 Welcome to **ROOT.WORKS**, a highly optimized, browser-based factory automation, simulation, and logistics game. Build massive supply chains, construct train networks, write custom PLC scripts, harness plasma physics, and automate everything from simple agriculture to quantum teleportation.
