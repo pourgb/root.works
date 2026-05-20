@@ -1,0 +1,5 @@
+afac-wasm/
+afac_server/
+node_modules/
+dist/
+target/
