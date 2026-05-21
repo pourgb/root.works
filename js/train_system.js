@@ -127,24 +127,13 @@ export const TrainSystem = {
     pathfindRail: function(startX, startY, targetStationName) {
         startX = Math.round(startX);
         startY = Math.round(startY);
-        if (!window.mapPipes) {
-            console.warn("  [pathfindRail] window.mapPipes is missing!");
-            return null;
-        }
-        if (!window.mapPipes['rail']) {
-            console.warn("  [pathfindRail] window.mapPipes['rail'] is missing!");
-            return null;
-        }
+       
         let railMap = window.mapPipes['rail'];
         let worldMap = window.getWorldMap ? window.getWorldMap() : null;
         let machines = window.getActiveMachines ? window.getActiveMachines() : [];
         let WORLD_SIZE = window.getWorldSize ? window.getWorldSize() : 1500;
         let SHAPES = window.LOGISTICS_SHAPES_REF;
         
-        if (!railMap) { console.warn("  [pathfindRail] railMap is missing!"); return null; }
-        if (!worldMap) { console.warn("  [pathfindRail] worldMap is missing!"); return null; }
-        if (!SHAPES) { console.warn("  [pathfindRail] SHAPES (LOGISTICS_SHAPES_REF) is missing!"); return null; }
-
         // Find target station machine
         let targetStation = null;
         for (let m of machines) {
@@ -153,23 +142,14 @@ export const TrainSystem = {
                 break;
             }
         }
-        if (!targetStation) {
-            console.warn(`  [pathfindRail] Target station "${targetStationName}" not found! Active stations:`, 
-                machines.filter(m => m && m.type === 'machine_train_stop').map(m => m.stationName || `Station_${m.id}`)
-            );
-            return null;
-        }
 
         // Find the rail tile adjacent to the target station
         let targetRailTile = this._findAdjacentRailTile(targetStation, railMap, worldMap, WORLD_SIZE);
-        if (!targetRailTile) {
-            console.warn(`  [pathfindRail] Target station "${targetStationName}" at (${targetStation.x},${targetStation.y}) has no adjacent rail tile!`);
-            return null;
-        }
+        
 
         let startRailTile = { x: startX, y: startY };
         if (railMap[startY * WORLD_SIZE + startX] === 0) {
-            console.log(`  [pathfindRail] Start coordinate (${startX},${startY}) is not a rail tile. Checking overlapping machines...`);
+            
             let startMachine = null;
             for (let m of machines) {
                 if (m) {
@@ -184,20 +164,6 @@ export const TrainSystem = {
                         break;
                     }
                 }
-            }
-            if (startMachine) {
-                console.log(`  [pathfindRail] Start coordinate overlaps machine of type "${startMachine.type}" (ID ${startMachine.id}) at (${startMachine.x},${startMachine.y}). Searching adjacent rails...`);
-                let adj = this._findAdjacentRailTile(startMachine, railMap, worldMap, WORLD_SIZE);
-                if (adj) {
-                    console.log(`  [pathfindRail] Found adjacent rail at (${adj.x},${adj.y})!`);
-                    startRailTile = adj;
-                } else {
-                    console.warn(`  [pathfindRail] Overlapping machine "${startMachine.type}" has no adjacent rail tile!`);
-                    return null;
-                }
-            } else {
-                console.warn(`  [pathfindRail] Start coordinate does not overlap any machine footprint!`);
-                return null;
             }
         }
 
@@ -273,7 +239,7 @@ export const TrainSystem = {
 
     _findAdjacentRailTile: function(station, railMap, worldMap, WORLD_SIZE) {
         let r = station.def.rotations[station.rotIndex || 0];
-        console.log(`  [_findAdjacentRailTile] Scanning around station/depot "${station.type}" (ID ${station.id}) at (${station.x},${station.y}) with size ${r.w}x${r.h}.`);
+        
         let checkedCount = 0;
         let railsFound = [];
         // Check all tiles adjacent to the machine's footprint
@@ -293,7 +259,7 @@ export const TrainSystem = {
                 }
             }
         }
-        console.log(`  [_findAdjacentRailTile] Checked ${checkedCount} border tiles. Found rails:`, railsFound);
+        
         if (railsFound.length > 0) return { x: railsFound[0].x, y: railsFound[0].y };
         return null;
     },
@@ -349,21 +315,21 @@ export const TrainSystem = {
         let shouldLog = Date.now() - this._lastLogTime > 3000; // print log every 3 seconds
         if (shouldLog) {
             this._lastLogTime = Date.now();
-            console.log(`[TrainSystem] Ticking ${this.trains.length} trains.`);
+            
         }
         for (let train of this.trains) {
             try {
                 if (shouldLog) {
-                    console.log(`  - Train ID ${train.id} ("${train.name}"): state=${train.state}, fuel=${train.fuel.toFixed(2)}, pos=(${Math.round(train.x)},${Math.round(train.y)}), schedule length=${train.schedule.length}`);
+                   
                     if (train.schedule.length > 0) {
                         let currentEntry = train.schedule[train.scheduleIdx];
-                        console.log(`    Current schedule target: ${currentEntry ? currentEntry.stationName : 'None'} (idx ${train.scheduleIdx})`);
+                       
                     }
                 }
                 // --- TRAVELING ---
                 if (train.state === 'traveling' && train.currentPath && train.currentPath.length > 0) {
                     if (train.fuel <= 0) {
-                        console.log(`[TrainSystem] Train ${train.id} ran out of fuel!`);
+                      
                         train.state = 'waiting_fuel'; // Stranded - hold position until refueled
                         continue;
                     }
@@ -602,30 +568,12 @@ export const TrainSystem = {
      * Begin traveling to the next scheduled station.
      */
     _beginTravelToNextStation: function(train) {
-        console.log(`[TrainSystem] _beginTravelToNextStation for train ${train.id} ("${train.name}"). Fuel: ${train.fuel.toFixed(2)}. ScheduleIdx: ${train.scheduleIdx}`);
-        if (train.schedule.length === 0) {
-            console.log(`  - Travel aborted: schedule is empty!`);
-            return;
-        }
-        if (train.fuel <= 0) {
-            console.log(`  - Travel aborted: train has 0 fuel!`);
-            return;
-        }
+       
 
         let schedEntry = train.schedule[train.scheduleIdx];
-        if (!schedEntry) {
-            console.log(`  - Travel aborted: no schedule entry at index ${train.scheduleIdx}!`);
-            return;
-        }
+       
 
-        console.log(`  - Attempting pathfinding to station: "${schedEntry.stationName}" from current pos: (${train.x.toFixed(1)}, ${train.y.toFixed(1)})`);
-        let path = this.pathfindRail(train.x, train.y, schedEntry.stationName);
-        if (!path) {
-            console.log(`  - Pathfinding failed! No path found to "${schedEntry.stationName}".`);
-        } else {
-            console.log(`  - Path found! Path length: ${path.length}.`);
-        }
-
+       
         if (path && path.length > 1) {
             // Pre-check: refuse to depart if insufficient fuel for the full trip
             let fuelCost = path.length * 0.01;

@@ -3140,6 +3140,73 @@ export const MACHINE_DEFS = {
             if (char === '-' || char === '|' || char === '/' || char === '\\') return { color: t === 0 ? '#e040fb' : '#b388ff' };
             return null;
         }
+    },
+
+    // ═══════ NUCLEAR UHP COMPRESSOR ═══════
+    'machine_nuclear_uhp_compressor': {
+        id: 'machine_nuclear_uhp_compressor', name: 'Nuclear UHP Compressor', color: '#1a237e',
+        rotations: genRot4({ w: 9, h: 9,
+            art: ["/-------\\", "|N#####N|", "|#N===N#|", "|#=N*N=#|", "|#=*C*=#|", "|#=N*N=#|", "|#N===N#|", "|N#####N|", "\\---v---/"],
+            outX: 4, outY: 9 }),
+        energy: { type: 'electric', usage: 50000 }, maxEnergy: 250000,
+        recipes: [
+            { in: { 'high_purity_carbon': 20 }, out: { 'diamond_shard': 1 } },
+            { in: { 'washed_carbon': 5 }, out: { 'graphite_control_rod': 1 } }
+        ],
+        updateOverride: function(m, r, dt) {
+            m.inv = m.inv || {}; m.energy = m.energy || 0; m.timer = m.timer || 0;
+            m.timer += dt;
+            if (m.timer < 120.0 || m.energy < 50000) return;
+            if ((m.inv['high_purity_carbon'] || 0) >= 20) {
+                m.timer = 0; m.energy -= 50000;
+                m.inv['high_purity_carbon'] -= 20;
+                if (!m.inv['high_purity_carbon']) delete m.inv['high_purity_carbon'];
+                m.outBuffer['diamond_shard'] = (m.outBuffer['diamond_shard'] || 0) + 1;
+            } else if ((m.inv['washed_carbon'] || 0) >= 5) {
+                m.timer = 0; m.energy -= 50000;
+                m.inv['washed_carbon'] -= 5;
+                if (!m.inv['washed_carbon']) delete m.inv['washed_carbon'];
+                m.outBuffer['graphite_control_rod'] = (m.outBuffer['graphite_control_rod'] || 0) + 1;
+            }
+        },
+        isWorking: function(m) {
+            return (m.energy || 0) >= 50000 && ((m.inv['high_purity_carbon'] || 0) >= 20 || (m.inv['washed_carbon'] || 0) >= 5);
+        },
+        renderAnim: function(char, t) {
+            if (char === '*') return { char: t === 0 ? '*' : '+', color: t === 0 ? '#82b1ff' : '#ffffff' };
+            if (char === 'C') return { char: t === 0 ? 'C' : 'o', color: '#00e5ff' };
+            if (char === 'N') return { char: t === 0 ? 'N' : 'n', color: '#b2ff59' };
+            if (char === '=') return { char: t === 0 ? '=' : '-', color: '#1565c0' };
+            return null;
+        }
+    },
+
+    // ═══════ POWERED INDUSTRIAL MINER ═══════
+    'machine_powered_industrial_miner': {
+        id: 'machine_powered_industrial_miner', name: 'Powered Industrial Miner', color: '#b71c1c',
+        rotations: genRot4({ w: 4, h: 4, art: ["/--\\", "|PM|", "|DH|", "\\-v/"], outX: 2, outY: 4 }),
+        energy: { type: 'electric', usage: 100 }, processTime: 1.5,
+        // Can mine all ores including rare ones: tungsten, rhenium, lithium, titanium
+        updateOverride: function(m, r, dt) {
+            m.energy = m.energy || 0; m.timer = m.timer || 0;
+            m.timer += dt;
+            if (!m.oreType || m.energy < 100) return;
+            const rareOres = ['tungsten_ore', 'rhenium_ore', 'lithium_ore', 'titanium_ore'];
+            const speed = rareOres.includes(m.oreType) ? 3.0 : 1.5;
+            if (m.timer >= speed) {
+                m.timer = 0; m.energy -= 100;
+                let outType = m.oreType === 'coal' ? 'raw_coal_lump' : m.oreType;
+                m.outBuffer[outType] = (m.outBuffer[outType] || 0) + 2;
+            }
+        },
+        renderAnim: function(char, t) {
+            if (char === 'P') return { char: t === 0 ? 'P' : 'p', color: '#ff7043' };
+            if (char === 'D') return { char: t === 0 ? 'D' : 'd', color: '#ffcc02' };
+            if (char === 'H') return { char: t === 0 ? 'H' : 'h', color: '#b71c1c' };
+            if (char === 'M') return { char: t === 0 ? 'M' : 'm', color: '#e65100' };
+            return null;
+        },
+        isWorking: function(m) { return m.oreType != null && (m.energy || 0) >= 100; }
     }
 };
 MACHINE_DEFS['machine_acid_leaching_vat'].recipes.push({
@@ -3286,7 +3353,7 @@ export const recipes = [
     // --- MIGRATED FROM afac.html ---
     { name: "Hyper Wire x5", env: "table", output: { id: "hyper_wire", amount: 5 }, input: { "copper_wire": 5, "liquid_plastic": 2 } },
     { name: "Gold-Lead Pipe x5", env: "table", output: { id: "gold_lead_pipe", amount: 5 }, input: { "gold_ingot": 2, "lead_plate": 1 } },
-    { name: "Graphite Control Rod", env: "table", output: { id: "graphite_control_rod", amount: 1 }, input: { "coal_brick": 2, "steel_plate": 1 } },
+    // Graphite Control Rod is now made in the Nuclear UHP Compressor (5 washed_carbon -> 1 rod, 50kW, 120s)
     { name: "Heavy Rock Breaker", env: "table", output: { id: "machine_rock_breaker", amount: 1 }, input: { "machine_miner": 1, "steel_plate": 10 } },
     { name: "Slurry Filter Press", env: "table", output: { id: "machine_slurry_filter_press", amount: 1 }, input: { "steel_plate": 10, "cloth": 5 } },
     { name: "Chemical Oxidizer", env: "table", output: { id: "machine_chemical_oxidizer", amount: 1 }, input: { "machine_chemical_mixer": 1, "titanium_hull_plate": 5 } },
@@ -3396,7 +3463,13 @@ export const recipes = [
     { name: "Digital Fluid Tank", env: "table", output: { id: "machine_digital_fluid_tank", amount: 1 }, input: { "machine_liquid_tank": 1, "quartz_cable": 5, "compute_module": 1 } },
     { name: "Digital Gas Tank", env: "table", output: { id: "machine_digital_gas_tank", amount: 1 }, input: { "machine_glass_tank": 1, "quartz_cable": 5, "compute_module": 1 } },
     { name: "Digital Acid Tank", env: "table", output: { id: "machine_digital_acid_tank", amount: 1 }, input: { "lead_lined_pipe": 10, "quartz_cable": 5, "compute_module": 1 } },
-    { name: "Digital Exporter", env: "table", output: { id: "machine_digital_exporter", amount: 1 }, input: { "compute_module": 1, "quartz_cable": 2, "iron_plate": 5 } }
+    { name: "Digital Exporter", env: "table", output: { id: "machine_digital_exporter", amount: 1 }, input: { "compute_module": 1, "quartz_cable": 2, "iron_plate": 5 } },
+
+    // --- NUCLEAR UHP COMPRESSOR & DIAMOND MINING ERA ---
+    { name: "Nuclear UHP Compressor", env: "table", output: { id: "machine_nuclear_uhp_compressor", amount: 1 }, input: { "steel_plate": 100, "invar_casing": 20, "invar_ingot": 30, "copper_wire": 50, "motor": 10, "titanium_hull_plate": 5 } },
+    { name: "Diamond Blade", env: "table", output: { id: "diamond_blade", amount: 1 }, input: { "diamond_shard": 20 } },
+    { name: "Steel Drillhead", env: "table", output: { id: "steel_drillhead", amount: 1 }, input: { "diamond_blade": 1, "steel_plate": 5, "motor": 2 } },
+    { name: "Powered Industrial Miner", env: "table", output: { id: "machine_powered_industrial_miner", amount: 1 }, input: { "steel_drillhead": 1, "machine_miner": 1, "steel_plate": 20, "motor": 5, "copper_wire": 10 } }
 ];
 
 // ═══════ BUILD MENU CATEGORIES ═══════

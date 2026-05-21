@@ -1497,6 +1497,9 @@
                         outBuffer: m.outBuffer || {},
                         out2Buffer: m.out2Buffer || {}
                     };
+                    if (nm.inv && Object.keys(nm.inv).length > 0) {
+                        nm._hasIngredients = true;
+                    }
                     if (nm.plcScript) {
                         try {
                             const lexer = new window.PLCLexer(nm.plcScript);
@@ -1907,7 +1910,7 @@
                 let flatOut2 = []; for (let p of m._out2Ports) { flatOut2.push(p.x, p.y); }
 
                 let energyUsage = m._energyUsage || 0;
-                let maxEnergy = m.def.energy ? m.def.energy.capacity || 100 : 0;
+                let maxEnergy = m.def.energy ? m.def.energy.capacity || (m.def.energy.storage ? 80000 : 1000) : 0;
                 let fuelId = m._isBurner ? (ITEM_TO_ID[m.def.energy.fuel] || 0) : 0;
 
                 gameState.register_standard_machine(
@@ -2646,7 +2649,10 @@
                 let selected = currentOpenMachine.filters?.out1?.[0];
                 const validMasks = ['cpu_mask', 'gpu_mask', 'rom_mask', 'ram_mask', 'ssd_mask', 'power_mask', 'clock_mask', 'io_mask'];
                 if (validMasks.includes(selected)) {
-                    let p = Math.floor((currentOpenMachine.timer / currentOpenMachine.def.processTime) * 100);
+                    let progressRatio = currentOpenMachine._isStandardWasm 
+    ? gameState.get_machine_timer(currentOpenMachine.id) 
+    : (currentOpenMachine.timer / currentOpenMachine.def.processTime);
+let p = Math.floor(progressRatio * 100);
                     recDiv.innerHTML = `<strong>Pressing Mask:</strong><br>${selected.toUpperCase()}<br>Progress: ${Math.min(100, p)}%`;
                 } else {
                     recDiv.innerHTML = `<em style="color:#d84315; font-weight:bold;">Type a valid mask ID in the<br>Orange Filter Box! (e.g. cpu_mask)</em>`;
@@ -2748,7 +2754,10 @@
                     if (canCraft) { activeRec = r; break; }
                 }
                 if (activeRec) {
-                    let p = Math.floor((currentOpenMachine.timer / currentOpenMachine.def.processTime) * 100);
+                    let progressRatio = currentOpenMachine._isStandardWasm 
+    ? gameState.get_machine_timer(currentOpenMachine.id) 
+    : (currentOpenMachine.timer / currentOpenMachine.def.processTime);
+let p = Math.floor(progressRatio * 100);
                     recDiv.innerHTML = `<strong>Processing:</strong><br>${Object.keys(activeRec.out).map(k => k.replace(/_/g, ' ')).join(', ')}<br>Progress: ${Math.min(100, p)}%`;
                 } else {
                     recDiv.innerHTML = `<em style="color:#d32f2f;">Waiting for ingredients/power...</em>`;
@@ -2970,11 +2979,19 @@
             let src = direction === 'to_machine' ? inventory : mTarget;
             let dst = direction === 'to_machine' ? mTarget : inventory;
 
-            // Handle New "Half" logic securely
+            // Sanitize inventory quantities to prevent string manipulation bugs
+            if (src[itemId] !== undefined) src[itemId] = Number(src[itemId]) || 0;
+            if (dst[itemId] !== undefined) dst[itemId] = Number(dst[itemId]) || 0;
+
+            // Handle New "Half" and "All" logic securely
             let amt = 0;
-            if (amount === 'all') amt = src[itemId];
-            else if (amount === 'half') amt = Math.max(1, Math.floor(src[itemId] / 2));
-            else amt = Math.min(amount, src[itemId]);
+            if (amount === 'all') {
+                amt = src[itemId] || 0;
+            } else if (amount === 'half') {
+                amt = Math.max(1, Math.floor((src[itemId] || 0) / 2));
+            } else {
+                amt = Math.min(Number(amount) || 1, src[itemId] || 0);
+            }
 
             if (!amt || amt <= 0) return;
 
@@ -2983,7 +3000,8 @@
             }
 
             if (direction === 'to_machine' && currentOpenMachine.type !== 'machine_hub' && bufferType === 'inv') {
-                let maxCapacity = (currentOpenMachine.def.maxStack || 100) - (dst[itemId] || 0);
+                let limit = Number(currentOpenMachine.def.maxStack) || 100;
+                let maxCapacity = limit - (dst[itemId] || 0);
                 amt = Math.min(amt, Math.max(0, maxCapacity));
             }
 
@@ -2991,9 +3009,19 @@
             src[itemId] -= amt; if (src[itemId] <= 0) delete src[itemId];
             dst[itemId] = (dst[itemId] || 0) + amt;
 
+            // Mark that this machine has received ingredients so it can animate
+            if (direction === 'to_machine') {
+                currentOpenMachine._hasIngredients = true;
+            }
+
             if (currentOpenMachine && currentOpenMachine._isStandardWasm) {
                 let flatArr = [];
-                for (let k in mTarget) flatArr.push(ITEM_TO_ID[k], mTarget[k]);
+                for (let k in mTarget) {
+                    let kid = ITEM_TO_ID[k];
+                    if (kid !== undefined) {
+                        flatArr.push(kid, Number(mTarget[k]) || 0);
+                    }
+                }
                 if (bufferType === 'inv') gameState.overwrite_machine_inv(currentOpenMachine.id, new Uint32Array(flatArr));
                 else if (bufferType === 'outBuffer') gameState.overwrite_machine_out(currentOpenMachine.id, new Uint32Array(flatArr), false);
                 else if (bufferType === 'out2Buffer') gameState.overwrite_machine_out(currentOpenMachine.id, new Uint32Array(flatArr), true);
@@ -3176,7 +3204,7 @@
                 for (let i = 0; i < count; i++) {
                     let cx = Math.floor(Math.random() * WORLD_SIZE), cy = Math.floor(Math.random() * WORLD_SIZE); if (Math.abs(cx - hx) < 20 && Math.abs(cy - hy) < 20) continue;
                     let rad = minRad + Math.floor(Math.random() * (maxRad - minRad + 1));
-                    
+
                     // Precompute random frequencies and phases for organic ponds nyan!
                     let phase1 = Math.random() * Math.PI * 2;
                     let phase2 = Math.random() * Math.PI * 2;
@@ -3758,19 +3786,28 @@
                 if (!m) continue;
                 if (m.def.energy && m.def.energy.storage) machineTypes[i] = 3; // Battery
                 else if (m.type === 'machine_mega_transformer') machineTypes[i] = 4; // Transformer
-                else if (m.type.includes('generator') || m.type === 'machine_steam_turbine') machineTypes[i] = 1; // Gen
+                // Fix: Include reactors in the generator type check (type 1)
+                else if (m.type.includes('generator') || m.type === 'machine_steam_turbine' || m.type.includes('reactor')) machineTypes[i] = 1; // Gen
                 else if (m.def.energy && m.def.energy.type === 'electric') machineTypes[i] = 2; // Consumer
             }
 
             let gridsData = gameState.rebuild_power_grids(machineTypes);
 
             powerGrids = gridsData.map(g => ({
-                netType: g.net_type === 2 ? 'sicu' : (g.net_type === 1 ? 'hyper_wire' : 'wire'),
+                // Fix: Correctly map type 3 to 'plasmatic'
+                netType: g.net_type === 3 ? 'plasmatic' : (g.net_type === 2 ? 'sicu' : (g.net_type === 1 ? 'hyper_wire' : 'wire')),
                 generators: g.generators.map(id => activeMachines[id]),
                 consumers: g.consumers.map(id => activeMachines[id]),
                 storage: g.storage.map(id => activeMachines[id])
             }));
             powerGridNeedsUpdate = false;
+        }
+
+        function getMaxEnergy(m) {
+            if (!m || !m.def || !m.def.energy) return 0;
+            if (m.def.energy.capacity !== undefined) return m.def.energy.capacity;
+            if (m.def.energy.storage) return 80000;
+            return 1000;
         }
 
         function updatePowerNetwork(dt) {
@@ -3779,16 +3816,54 @@
             if (generatorTick >= 1.0) {
                 generatorTick = 0;
 
+                // 1. Sync current energy from WASM to JS for standard machines
+                for (let grid of powerGrids) {
+                    for (let g of grid.generators) {
+                        if (g && g._isStandardWasm) g.energy = gameState.get_machine_energy(g.id);
+                    }
+                    for (let m of grid.consumers) {
+                        if (m && m._isStandardWasm) m.energy = gameState.get_machine_energy(m.id);
+                    }
+                    for (let s of grid.storage) {
+                        if (s && s._isStandardWasm) s.energy = gameState.get_machine_energy(s.id);
+                    }
+                }
+
                 // Pass 1: Handle SiCu grids first (Reactors -> Transformers)
                 for (let grid of powerGrids.filter(g => g.netType === 'sicu')) {
-                    let powerAvailable = 0;
+                    let totalProduced = 0;
+                    let pullLimit = 1000000;
+
+                    for (let g of grid.generators) {
+                        let amount = Math.min(g.energy || 0, pullLimit);
+                        totalProduced += amount;
+                        g.energy -= amount;
+                    }
+
+                    if (totalProduced <= 0) continue;
+
+                    let hungry = grid.consumers.filter(m => (m.energy || 0) < getMaxEnergy(m));
+                    if (hungry.length > 0) {
+                        let perConsumer = totalProduced / hungry.length;
+                        for (let m of hungry) {
+                            let max = getMaxEnergy(m);
+                            let needed = max - (m.energy || 0);
+                            let give = Math.min(needed, perConsumer);
+                            m.energy = (m.energy || 0) + give;
+                            totalProduced -= give;
+                        }
+                    }
+
+                    if (totalProduced > 0 && grid.generators.length > 0) {
+                        let refund = totalProduced / grid.generators.length;
+                        grid.generators.forEach(g => g.energy += refund);
+                    }
                 }
 
                 // Pass 2: Handle Plasmatic, Hyper, & Normal grids
                 for (let grid of powerGrids.filter(g => g.netType !== 'sicu')) {
                     let totalProduced = 0;
 
-                    // PROPERLY ASSIGN PULL LIMITS HERE!
                     let pullLimit = 500;
                     if (grid.netType === 'hyper_wire') pullLimit = 250000;
                     if (grid.netType === 'plasmatic') pullLimit = 50000000;
@@ -3799,7 +3874,7 @@
                         g.energy -= amount;
                     }
 
-                    let hungry = grid.consumers.filter(m => (m.energy || 0) < (m.def.maxEnergy || 1000));
+                    let hungry = grid.consumers.filter(m => (m.energy || 0) < getMaxEnergy(m));
                     if (totalProduced < 1000 && grid.storage.length > 0) {
                         for (let s of grid.storage) {
                             let canDraw = Math.min(s.energy || 0, pullLimit);
@@ -3812,7 +3887,7 @@
 
                     let perConsumer = totalProduced / (hungry.length || 1);
                     for (let m of hungry) {
-                        let max = (m.def.maxEnergy || 1000);
+                        let max = getMaxEnergy(m);
                         let needed = max - (m.energy || 0);
                         let give = Math.min(needed, perConsumer);
                         m.energy = (m.energy || 0) + give;
@@ -3820,11 +3895,11 @@
                     }
 
                     if (totalProduced > 0 && grid.storage.length > 0) {
-                        let charging = grid.storage.filter(s => (s.energy || 0) < (s.def.maxEnergy || 80000));
+                        let charging = grid.storage.filter(s => (s.energy || 0) < getMaxEnergy(s));
                         if (charging.length > 0) {
                             let perBattery = totalProduced / charging.length;
                             for (let s of charging) {
-                                let space = (s.def.maxEnergy || 80000) - (s.energy || 0);
+                                let space = getMaxEnergy(s) - (s.energy || 0);
                                 let fill = Math.min(space, perBattery);
                                 s.energy = (s.energy || 0) + fill;
                                 totalProduced -= fill;
@@ -3837,8 +3912,22 @@
                         grid.generators.forEach(g => g.energy += refund);
                     }
                 }
+
+                // 2. Write back all new energy values to WASM for standard machines
+                for (let grid of powerGrids) {
+                    for (let g of grid.generators) {
+                        if (g && g._isStandardWasm) gameState.set_machine_energy(g.id, g.energy);
+                    }
+                    for (let m of grid.consumers) {
+                        if (m && m._isStandardWasm) gameState.set_machine_energy(m.id, m.energy);
+                    }
+                    for (let s of grid.storage) {
+                        if (s && s._isStandardWasm) gameState.set_machine_energy(s.id, s.energy);
+                    }
+                }
             }
         }
+
 
         function rebuildDataGrids() {
             for (let i = 0; i < activeMachines.length; i++) if (activeMachines[i]) activeMachines[i].dataGrid = null;
@@ -4108,8 +4197,9 @@
                         let maxCap = (nm.def.maxStack || 100) - (nm.inv[itemIdStr] || 0);
                         let toInsert = Math.min(amount, Math.max(0, maxCap));
                         if (toInsert > 0 && (!nm.def.acceptsItem || nm.def.acceptsItem(nm, itemIdStr))) {
-                            nm.inv[itemIdStr] = (nm.inv[itemIdStr] || 0) + toInsert;
-                            floatText(mx, my, `In: ${toInsert}x ` + itemIdStr, ITEM_COLORS[itemIdStr] || '#fff');
+    nm.inv[itemIdStr] = (nm.inv[itemIdStr] || 0) + toInsert;
+    nm._hasIngredients = true; // Flag standard machine as supplied
+    floatText(mx, my, `In: ${toInsert}x ` + itemIdStr, ITEM_COLORS[itemIdStr] || '#fff');
                             if (toInsert >= amount) {
                                 gameState.remove_belt_item_at(routeId, routeIdx); // fully consumed
                             } else {
@@ -4416,9 +4506,15 @@
                 let r = m.def.rotations[m.rotIndex];
 
                 let isWorking = false;
-                if (m.def.isWorking) {
-                    isWorking = m.def.isWorking(m);
-                } else if (m.def.recipes && m.def.recipes.length > 0) {
+if (m.disabledByPLC) {
+    isWorking = false;
+} else if (m._isStandardWasm) {
+    let progressRatio = gameState.get_machine_timer(m.id);
+    // Standard machines only play animations if they have actively received ingredients
+    isWorking = m._hasIngredients && (progressRatio > 0.0 && progressRatio < 1.0);
+} else if (m.def.isWorking) {
+    isWorking = m.def.isWorking(m);
+} else if (m.def.recipes && m.def.recipes.length > 0) {
                     let hasPower = true;
                     if (m.def.energy) {
                         if (m.def.energy.type === 'electric') hasPower = ((m.energy || 0) >= (m.def.energy.usage || 0));
@@ -4441,7 +4537,6 @@
                         }
                     }
                 }
-                if (m.disabledByPLC) isWorking = false;
 
                 for (let y = 0; y < r.h; y++) {
                     for (let x = 0; x < r.w; x++) {
