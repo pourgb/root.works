@@ -3,3 +3,4 @@ afac_server/
 node_modules/
 dist/
 target/
+AGENTS.MD

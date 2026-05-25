@@ -78,6 +78,14 @@ pub struct RustWorld {
     pub combat_render_buffer: Vec<f32>,
     pub combat_hits_buffer: Vec<f32>,
     pub dead_monsters: Vec<u8>,
+    // Scratch buffers to avoid per-loop Vec allocations in grid rebuilds
+    pub scratch_queue: Vec<usize>,
+    pub scratch_generators: Vec<usize>,
+    pub scratch_consumers: Vec<usize>,
+    pub scratch_storage: Vec<usize>,
+    pub scratch_m_queue: Vec<usize>,
+    pub scratch_cable_queue: Vec<usize>,
+    pub scratch_grid_machines: Vec<usize>,
 }
 
 impl RustWorld {
@@ -97,6 +105,13 @@ impl RustWorld {
             combat_render_buffer: Vec::new(),
             combat_hits_buffer: Vec::new(),
             dead_monsters: Vec::new(),
+            scratch_queue: Vec::new(),
+            scratch_generators: Vec::new(),
+            scratch_consumers: Vec::new(),
+            scratch_storage: Vec::new(),
+            scratch_m_queue: Vec::new(),
+            scratch_cable_queue: Vec::new(),
+            scratch_grid_machines: Vec::new(),
         }
     }
 }
@@ -448,10 +463,10 @@ impl GameState {
         self.active_mut().projectiles.push(Projectile { x, y, vx, vy, life, dmg, color_idx }); 
     }
 
-    pub fn rebuild_power_grids(&self, machine_types: &[u8]) -> JsValue {
+    pub fn rebuild_power_grids(&mut self, machine_types: &[u8]) -> JsValue {
         let mut grids = Vec::new();
         let mut visited = vec![false; MAP_LEN];
-        let aw = self.active();
+        let aw = self.active_mut();
 
         for i in 0..MAP_LEN {
             if visited[i] { continue; }
@@ -463,10 +478,15 @@ impl GameState {
 
             let net_type = if is_plasma { 3 } else if is_sicu { 2 } else if is_hyper { 1 } else { 0 };
             
-            let mut generators = Vec::new(); let mut consumers = Vec::new(); let mut storage = Vec::new();
-            let mut queue = vec![i]; visited[i] = true; let mut visited_machines = HashSet::new();
+            aw.scratch_generators.clear();
+            aw.scratch_consumers.clear();
+            aw.scratch_storage.clear();
+            aw.scratch_queue.clear();
+            aw.scratch_queue.push(i);
+            visited[i] = true;
+            let mut visited_machines = HashSet::new();
 
-            while let Some(curr) = queue.pop() {
+            while let Some(curr) = aw.scratch_queue.pop() {
                 let cx = (curr % WORLD_SIZE) as i32; let cy = (curr / WORLD_SIZE) as i32;
                 for (dx, dy) in &[(1,0), (-1,0), (0,1), (0,-1)] {
                     let nx = cx + dx; let ny = cy + dy;
@@ -480,17 +500,17 @@ impl GameState {
                         _ => aw.wire_map[nidx] > 0 
                     };
                     
-                    if has_wire && !visited[nidx] { visited[nidx] = true; queue.push(nidx); }
+                    if has_wire && !visited[nidx] { visited[nidx] = true; aw.scratch_queue.push(nidx); }
                     if aw.world_map[nidx] >= 50000 {
                         let m_id = (aw.world_map[nidx] - 50000) as usize;
                         if m_id < machine_types.len() && visited_machines.insert(m_id) {
                             match machine_types[m_id] { 
-                                1 => generators.push(m_id), 
-                                2 => consumers.push(m_id), 
-                                3 => storage.push(m_id), 
+                                1 => aw.scratch_generators.push(m_id), 
+                                2 => aw.scratch_consumers.push(m_id), 
+                                3 => aw.scratch_storage.push(m_id), 
                                 4 => {
-                                    if net_type == 2 { consumers.push(m_id); } 
-                                    else if net_type == 1 || net_type == 3 { generators.push(m_id); } 
+                                    if net_type == 2 { aw.scratch_consumers.push(m_id); } 
+                                    else if net_type == 1 || net_type == 3 { aw.scratch_generators.push(m_id); } 
                                 }, 
                                 _ => {} 
                             }
@@ -498,12 +518,19 @@ impl GameState {
                     }
                 }
             }
-            if !generators.is_empty() || !consumers.is_empty() || !storage.is_empty() { grids.push(PowerGridResult { net_type, generators, consumers, storage }); }
+            if !aw.scratch_generators.is_empty() || !aw.scratch_consumers.is_empty() || !aw.scratch_storage.is_empty() {
+                grids.push(PowerGridResult {
+                    net_type,
+                    generators: std::mem::take(&mut aw.scratch_generators),
+                    consumers: std::mem::take(&mut aw.scratch_consumers),
+                    storage: std::mem::take(&mut aw.scratch_storage),
+                });
+            }
         }
         serde_wasm_bindgen::to_value(&grids).unwrap()
     }
 
-    pub fn rebuild_data_grids(&self, js_machines: JsValue) -> JsValue {
+    pub fn rebuild_data_grids(&mut self, js_machines: JsValue) -> JsValue {
         let machines: Vec<MachineDataInfo> = serde_wasm_bindgen::from_value(js_machines)
             .unwrap_or_default();
         let mut grids = Vec::new();
@@ -514,22 +541,23 @@ impl GameState {
             m_map.insert(m.id, m);
         }
 
-        let aw = self.active();
+        let aw = self.active_mut();
 
         for m in &machines {
             if visited_machines.contains(&m.id) {
                 continue;
             }
-            let mut grid_machines = Vec::new();
+            aw.scratch_grid_machines.clear();
+            aw.scratch_m_queue.clear();
+            aw.scratch_cable_queue.clear();
             let mut has_radar = false;
             let mut has_cdh = false;
 
-            let mut m_queue = vec![m.id];
-            let mut cable_queue = Vec::new();
+            aw.scratch_m_queue.push(m.id);
             visited_machines.insert(m.id);
 
-            while let Some(m_id) = m_queue.pop() {
-                grid_machines.push(m_id);
+            while let Some(m_id) = aw.scratch_m_queue.pop() {
+                aw.scratch_grid_machines.push(m_id);
                 if let Some(cur) = m_map.get(&m_id) {
                     if cur.m_type == 10 { // CDH m_type
                         has_cdh = true;
@@ -550,7 +578,7 @@ impl GameState {
                                     let n_idx = (ny as usize) * WORLD_SIZE + (nx as usize);
                                     if aw.quartz_map[n_idx] > 0 && !visited_tiles[n_idx] {
                                         visited_tiles[n_idx] = true;
-                                        cable_queue.push(n_idx);
+                                        aw.scratch_cable_queue.push(n_idx);
                                     }
                                 }
                             }
@@ -559,7 +587,7 @@ impl GameState {
                 }
 
                 // BFS through cables to find more machines or cables
-                while let Some(c_idx) = cable_queue.pop() {
+                while let Some(c_idx) = aw.scratch_cable_queue.pop() {
                     let cx = (c_idx % WORLD_SIZE) as i32;
                     let cy = (c_idx / WORLD_SIZE) as i32;
                     for (dx, dy) in &[(1, 0), (-1, 0), (0, 1), (0, -1)] {
@@ -572,22 +600,22 @@ impl GameState {
 
                         if aw.quartz_map[n_idx] > 0 && !visited_tiles[n_idx] {
                             visited_tiles[n_idx] = true;
-                            cable_queue.push(n_idx);
+                            aw.scratch_cable_queue.push(n_idx);
                         }
 
                         let tile_id = aw.world_map[n_idx];
                         if tile_id >= 50000 {
                             let hit_id = (tile_id - 50000) as usize;
                             if m_map.contains_key(&hit_id) && visited_machines.insert(hit_id) {
-                                m_queue.push(hit_id);
+                                aw.scratch_m_queue.push(hit_id);
                             }
                         }
                     }
                 }
             }
-            if !grid_machines.is_empty() {
+            if !aw.scratch_grid_machines.is_empty() {
                 grids.push(DataGridResult {
-                    machines: grid_machines,
+                    machines: std::mem::take(&mut aw.scratch_grid_machines),
                     has_radar,
                     has_cdh,
                 });
@@ -596,7 +624,7 @@ impl GameState {
         serde_wasm_bindgen::to_value(&grids).unwrap()
     }
 
-    pub fn rebuild_analog_grids(&self, js_machines: JsValue) -> JsValue {
+    pub fn rebuild_analog_grids(&mut self, js_machines: JsValue) -> JsValue {
         let machines: Vec<MachineDataInfo> = serde_wasm_bindgen::from_value(js_machines)
             .unwrap_or_default();
         let mut grids = Vec::new();
@@ -605,17 +633,18 @@ impl GameState {
         let mut m_map = HashMap::new();
         for m in &machines { m_map.insert(m.id, m); }
 
-        let aw = self.active();
+        let aw = self.active_mut();
 
         for m in &machines {
             if visited_machines.contains(&m.id) { continue; }
-            let mut grid_machines = Vec::new();
-            let mut m_queue = vec![m.id];
-            let mut cable_queue = Vec::new();
+            aw.scratch_grid_machines.clear();
+            aw.scratch_m_queue.clear();
+            aw.scratch_cable_queue.clear();
+            aw.scratch_m_queue.push(m.id);
             visited_machines.insert(m.id);
 
-            while let Some(m_id) = m_queue.pop() {
-                grid_machines.push(m_id);
+            while let Some(m_id) = aw.scratch_m_queue.pop() {
+                aw.scratch_grid_machines.push(m_id);
                 if let Some(cur) = m_map.get(&m_id) {
                     for my in 0..cur.h {
                         for mx in 0..cur.w {
@@ -626,7 +655,7 @@ impl GameState {
                                     let n_idx = (ny as usize) * WORLD_SIZE + (nx as usize);
                                     if aw.analog_map[n_idx] > 0 && !visited_tiles[n_idx] {
                                         visited_tiles[n_idx] = true;
-                                        cable_queue.push(n_idx);
+                                        aw.scratch_cable_queue.push(n_idx);
                                     }
                                 }
                             }
@@ -634,7 +663,7 @@ impl GameState {
                     }
                 }
 
-                while let Some(c_idx) = cable_queue.pop() {
+                while let Some(c_idx) = aw.scratch_cable_queue.pop() {
                     let cx = (c_idx % WORLD_SIZE) as i32; let cy = (c_idx / WORLD_SIZE) as i32;
                     for (dx, dy) in &[(1, 0), (-1, 0), (0, 1), (0, -1)] {
                         let nx = cx + dx; let ny = cy + dy;
@@ -642,20 +671,20 @@ impl GameState {
                         let n_idx = (ny as usize) * WORLD_SIZE + (nx as usize);
                         if aw.analog_map[n_idx] > 0 && !visited_tiles[n_idx] {
                             visited_tiles[n_idx] = true;
-                            cable_queue.push(n_idx);
+                            aw.scratch_cable_queue.push(n_idx);
                         }
                         let tile_id = aw.world_map[n_idx];
                         if tile_id >= 50000 {
                             let hit_id = (tile_id - 50000) as usize;
                             if m_map.contains_key(&hit_id) && visited_machines.insert(hit_id) {
-                                m_queue.push(hit_id);
+                                aw.scratch_m_queue.push(hit_id);
                             }
                         }
                     }
                 }
             }
-            if !grid_machines.is_empty() {
-                grids.push(DataGridResult { machines: grid_machines, has_radar: false, has_cdh: false });
+            if !aw.scratch_grid_machines.is_empty() {
+                grids.push(DataGridResult { machines: std::mem::take(&mut aw.scratch_grid_machines), has_radar: false, has_cdh: false });
             }
         }
         serde_wasm_bindgen::to_value(&grids).unwrap()
