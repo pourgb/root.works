@@ -548,6 +548,8 @@
             mapPipes['insulated'] = new Uint8Array(wasm.memory.buffer, gameState.get_insulated_map_ptr(), 1500 * 1500);
             mapPipes['sicu'] = new Uint8Array(wasm.memory.buffer, gameState.get_sicu_map_ptr(), 1500 * 1500);
 
+            window.cachedWasmBuffer = wasm.memory.buffer;
+
             // Keep standard JS arrays for the pipes Rust doesn't need to BFS
             const nonRustPipes = ['item', 'iron', 'copper', 'brass', 'gas', 'acid', 'steel', 'drone_farm', 'drone_carry', 'defense_signal', 'floor', 'waste', 'item_heavy', 'brass_heavy'];
             for (let net of nonRustPipes) {
@@ -789,18 +791,22 @@
 
         // Rebind all WASM-backed typed array views after any WASM call that may grow memory.
         // WASM memory.grow() detaches ALL existing ArrayBuffer views, causing reads/writes to silently fail.
-        function rebindWasmViews() {
-            worldMap = new Uint16Array(wasm.memory.buffer, gameState.get_world_map_ptr(), 1500 * 1500);
-            moistureMap = new Uint8Array(wasm.memory.buffer, gameState.get_moisture_map_ptr(), 1500 * 1500);
-            cropProgress = new Uint8Array(wasm.memory.buffer, gameState.get_crop_progress_ptr(), 1500 * 1500);
-            mapPipes['wire'] = new Uint8Array(wasm.memory.buffer, gameState.get_wire_map_ptr(), 1500 * 1500);
-            mapPipes['hyper_wire'] = new Uint8Array(wasm.memory.buffer, gameState.get_hyper_wire_map_ptr(), 1500 * 1500);
-            mapPipes['quartz'] = new Uint8Array(wasm.memory.buffer, gameState.get_quartz_map_ptr(), 1500 * 1500);
-            mapPipes['silver'] = new Uint8Array(wasm.memory.buffer, gameState.get_silver_map_ptr(), 1500 * 1500);
-            mapPipes['insulated'] = new Uint8Array(wasm.memory.buffer, gameState.get_insulated_map_ptr(), 1500 * 1500);
-            mapPipes['sicu'] = new Uint8Array(wasm.memory.buffer, gameState.get_sicu_map_ptr(), 1500 * 1500);
+        function rebindAllWasmViews() {
+            worldMap = new Uint16Array(wasm.memory.buffer, gameState.get_world_map_ptr(), MAP_LEN);
+            moistureMap = new Uint8Array(wasm.memory.buffer, gameState.get_moisture_map_ptr(), MAP_LEN);
+            cropProgress = new Uint8Array(wasm.memory.buffer, gameState.get_crop_progress_ptr(), MAP_LEN);
+            mapPipes['wire'] = new Uint8Array(wasm.memory.buffer, gameState.get_wire_map_ptr(), MAP_LEN);
+            mapPipes['hyper_wire'] = new Uint8Array(wasm.memory.buffer, gameState.get_hyper_wire_map_ptr(), MAP_LEN);
+            mapPipes['quartz'] = new Uint8Array(wasm.memory.buffer, gameState.get_quartz_map_ptr(), MAP_LEN);
+            mapPipes['silver'] = new Uint8Array(wasm.memory.buffer, gameState.get_silver_map_ptr(), MAP_LEN);
+            mapPipes['insulated'] = new Uint8Array(wasm.memory.buffer, gameState.get_insulated_map_ptr(), MAP_LEN);
+            mapPipes['sicu'] = new Uint8Array(wasm.memory.buffer, gameState.get_sicu_map_ptr(), MAP_LEN);
             if (gameState.get_plasmatic_map_ptr) {
-                mapPipes['plasmatic'] = new Uint8Array(wasm.memory.buffer, gameState.get_plasmatic_map_ptr(), 1500 * 1500);
+                mapPipes['plasmatic'] = new Uint8Array(wasm.memory.buffer, gameState.get_plasmatic_map_ptr(), MAP_LEN);
+            }
+            if (window.agent) {
+                window.agent.worldMap = worldMap;
+                window.agent.mapPipes = mapPipes;
             }
         }
         // Power Grid Cache
@@ -1065,7 +1071,7 @@
 `);
 
         window.getLiveSaveString = function () {
-            rebindWasmViews();
+            rebindAllWasmViews();
             let pipesToSave = {};
             for (let net of NETWORKS) {
                 if (mapPipes[net]) pipesToSave[net] = rleEncode(mapPipes[net]);
@@ -1325,13 +1331,13 @@
             if (arr instanceof Uint16Array) {
                 let snapshot = new Uint16Array(arr); // copy out of WASM memory first
                 let result = rle_encode_u16(snapshot);
-                rebindWasmViews(); // rebind views in case WASM memory grew
+                rebindAllWasmViews(); // rebind views in case WASM memory grew
                 return result;
             }
             if (arr instanceof Uint8Array) {
                 let snapshot = new Uint8Array(arr); // copy out of WASM memory first
                 let result = rle_encode_u8(snapshot);
-                rebindWasmViews(); // rebind views in case WASM memory grew
+                rebindAllWasmViews(); // rebind views in case WASM memory grew
                 return result;
             }
             return "";
@@ -1342,7 +1348,7 @@
             if (TypedArrayType === Uint16Array) result = rle_decode_u16(str, 1500 * 1500);
             else if (TypedArrayType === Uint8Array) result = rle_decode_u8(str, 1500 * 1500);
             else result = new TypedArrayType(1500 * 1500);
-            rebindWasmViews(); // rebind views in case WASM memory grew during decode
+            rebindAllWasmViews(); // rebind views in case WASM memory grew during decode
             return result;
         }
 
@@ -1364,7 +1370,7 @@
         }
 
         function saveGame() {
-            rebindWasmViews(); // ensure all views are fresh before encoding
+            rebindAllWasmViews(); // ensure all views are fresh before encoding
             let pipesToSave = {};
             for (let net of NETWORKS) {
                 if (mapPipes[net]) {
@@ -1432,7 +1438,7 @@
                 activeRoutes.forEach(r => delete r.rustId);
 
                 // Rebind views before writing decoded data into WASM memory
-                rebindWasmViews();
+                rebindAllWasmViews();
 
                 // Decode world map and write into WASM-backed view
                 let decodedWorld = rleDecode(save.worldMap, Uint16Array);
@@ -1533,7 +1539,7 @@
                     window.TrainSystem.trains = [];
                 }
 
-                rebindWasmViews(); // final rebind after all WASM calls
+                rebindAllWasmViews(); // final rebind after all WASM calls
 
                 floatText(player.x, player.y, "Game Loaded Successfully!", "#03a9f4");
                 if (inventoryVisible) updateInventoryUI();
@@ -3964,6 +3970,11 @@ let p = Math.floor(progressRatio * 100);
         }
 
         function update(dt) {
+            if (window.cachedWasmBuffer !== wasm.memory.buffer) {
+                window.cachedWasmBuffer = wasm.memory.buffer;
+                rebindAllWasmViews();
+            }
+
             if (isBenchmarking) { updateBenchmark(dt); }
             if (benchmarkComplete) { return; }
 
@@ -4406,33 +4417,9 @@ let p = Math.floor(progressRatio * 100);
         }
 
         function render() {
-            if (!worldMap || worldMap.byteLength === 0) {
-                console.log("WASM Memory Grew! Rebinding Map Arrays...");
-                worldMap = new Uint16Array(wasm.memory.buffer, gameState.get_world_map_ptr(), 1500 * 1500);
-                moistureMap = new Uint8Array(wasm.memory.buffer, gameState.get_moisture_map_ptr(), 1500 * 1500);
-                cropProgress = new Uint8Array(wasm.memory.buffer, gameState.get_crop_progress_ptr(), 1500 * 1500);
-                mapPipes['wire'] = new Uint8Array(wasm.memory.buffer, gameState.get_wire_map_ptr(), 1500 * 1500);
-                mapPipes['hyper_wire'] = new Uint8Array(wasm.memory.buffer, gameState.get_hyper_wire_map_ptr(), 1500 * 1500);
-                mapPipes['quartz'] = new Uint8Array(wasm.memory.buffer, gameState.get_quartz_map_ptr(), 1500 * 1500);
-                mapPipes['silver'] = new Uint8Array(wasm.memory.buffer, gameState.get_silver_map_ptr(), 1500 * 1500);
-                mapPipes['insulated'] = new Uint8Array(wasm.memory.buffer, gameState.get_insulated_map_ptr(), 1500 * 1500);
-                mapPipes['sicu'] = new Uint8Array(wasm.memory.buffer, gameState.get_sicu_map_ptr(), 1500 * 1500);
-                if (gameState.get_plasmatic_map_ptr) {
-                    mapPipes['plasmatic'] = new Uint8Array(wasm.memory.buffer, gameState.get_plasmatic_map_ptr(), 1500 * 1500);
-                }
-
-                if (window.agent) {
-                    window.agent.worldMap = worldMap;
-                    window.agent.mapPipes = mapPipes;
-                }
-            }
-
-            if (window.wasm && window.wasm.memory) {
-                if (!window.cachedWasmMemoryBuffer || window.cachedWasmMemoryBuffer !== window.wasm.memory.buffer) {
-                    window.cachedWasmMemoryBuffer = window.wasm.memory.buffer;
-                    if (typeof rebindWasmArrays === 'function') rebindWasmArrays();
-                    if (typeof rebindPlasmaticArrays === 'function') rebindPlasmaticArrays();
-                }
+            if (window.cachedWasmBuffer !== wasm.memory.buffer) {
+                window.cachedWasmBuffer = wasm.memory.buffer;
+                rebindAllWasmViews();
             }
 
             gl.viewport(0, 0, canvas.width, canvas.height);
