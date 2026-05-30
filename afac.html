@@ -4073,22 +4073,52 @@ let p = Math.floor(progressRatio * 100);
             let curSpeed = PLAYER_SPEED * (keys.shift ? 1.8 : 1.0);
             if (worldMap[Math.floor(player.y) * WORLD_SIZE + Math.floor(player.x)] === 43) curSpeed *= 1.5;
 
+            let isPickupMode = isPlacingActive && placingItem.type === 'tool' && placingItem.id === 'pickup';
+            let canWalkOnMachines = (routingMode !== 'none') || isPickupMode;
+
+            // Helper to check if a position collides with any machines
+            const playerRadius = 0.35;
+            function isCollidingAt(x, y) {
+                let minX = Math.floor(x - playerRadius);
+                let maxX = Math.floor(x + playerRadius);
+                let minY = Math.floor(y - playerRadius);
+                let maxY = Math.floor(y + playerRadius);
+
+                for (let ty = minY; ty <= maxY; ty++) {
+                    for (let tx = minX; tx <= maxX; tx++) {
+                        if (tx < 0 || tx >= WORLD_SIZE || ty < 0 || ty >= WORLD_SIZE) {
+                            return true; // Map bounds are solid
+                        }
+                        if (worldMap[ty * WORLD_SIZE + tx] >= 50000) {
+                            return true; // Machine is solid
+                        }
+                    }
+                }
+                return false;
+            }
+
             const prevX = player.x, prevY = player.y;
-            player.x = Math.max(1, Math.min(WORLD_SIZE - 2, player.x + dx * curSpeed * dt));
-            player.y = Math.max(1, Math.min(WORLD_SIZE - 2, player.y + dy * curSpeed * dt));
+            const wasColliding = !canWalkOnMachines && isCollidingAt(prevX, prevY);
+
+            // Move X independently
+            player.x = Math.max(playerRadius, Math.min(WORLD_SIZE - 1 - playerRadius, player.x + dx * curSpeed * dt));
+            if (!canWalkOnMachines && !wasColliding && isCollidingAt(player.x, player.y)) {
+                player.x = prevX;
+            }
+
+            // Move Y independently
+            player.y = Math.max(playerRadius, Math.min(WORLD_SIZE - 1 - playerRadius, player.y + dy * curSpeed * dt));
+            if (!canWalkOnMachines && !wasColliding && isCollidingAt(player.x, player.y)) {
+                player.y = prevY;
+            }
+
             if ((dx !== 0 || dy !== 0) && isMining) stopMining();
 
             let spaceJustPressed = keys.space && !spaceWasDown;
             const px = Math.floor(player.x), py = Math.floor(player.y);
 
-            let isPickupMode = isPlacingActive && placingItem.type === 'tool' && placingItem.id === 'pickup';
             let wasInside = worldMap[Math.floor(prevY) * WORLD_SIZE + Math.floor(prevX)] >= 50000;
             let isInside = worldMap[Math.floor(player.y) * WORLD_SIZE + Math.floor(player.x)] >= 50000;
-
-            // Allow walking onto machines ONLY if in Routing Mode or Pickup Mode
-            if (isInside && !wasInside && routingMode === 'none' && !isPickupMode) {
-                player.x = prevX; player.y = prevY;
-            }
             if (isPickupMode && keys.space) {
                 if (px !== lastPlacedPos.x || py !== lastPlacedPos.y) {
                     lastPlacedPos = { x: px, y: py };
