@@ -3334,7 +3334,23 @@ let p = Math.floor(progressRatio * 100);
             for (let i = 0; i < 15000; i++) {
                 let cx = Math.floor(Math.random() * WORLD_SIZE), cy = Math.floor(Math.random() * WORLD_SIZE);
                 if (Math.abs(cx - hx) < 20 && Math.abs(cy - hy) < 20) continue;
-                if (worldMap[cy * WORLD_SIZE + cx] <= 1) {
+
+                // Avoid spawning trees too close to other trees, ore/stone veins, or ponds nyan!
+                let canSpawn = true;
+                for (let ny = cy - 3; ny <= cy + 3; ny++) {
+                    for (let nx = cx - 3; nx <= cx + 3; nx++) {
+                        if (nx >= 0 && nx < WORLD_SIZE && ny >= 0 && ny < WORLD_SIZE) {
+                            let tid = worldMap[ny * WORLD_SIZE + nx];
+                            if (tid >= 2 && tid <= 42) {
+                                canSpawn = false;
+                                break;
+                            }
+                        }
+                    }
+                    if (!canSpawn) break;
+                }
+
+                if (canSpawn && worldMap[cy * WORLD_SIZE + cx] <= 1) {
                     let type = Math.floor(Math.random() * 3);
                     worldMap[cy * WORLD_SIZE + cx] = 3;
                     if (type === 0) {
