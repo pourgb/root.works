@@ -808,7 +808,7 @@ impl GameState {
         target
     }
 
-    pub fn update_combat_multiplayer(&mut self, dt: f32, flat_players: &[f32]) -> Vec<f32> {
+    pub fn update_combat_multiplayer(&mut self, dt: f32, flat_players: &[f32], is_creative: bool) -> Vec<f32> {
         let mut aw = self.active_mut();
         aw.combat_render_buffer.clear(); 
 
@@ -824,34 +824,58 @@ impl GameState {
 
             let m = &mut aw.monsters[i];
             
-            let mut nearest_dist = f32::MAX;
-            let mut target_px = m.x;
-            let mut target_py = m.y;
-            let mut target_p_idx = 0;
-
-            for p_idx in 0..(flat_players.len() / 3) {
-                let px = flat_players[p_idx * 3];
-                let py = flat_players[p_idx * 3 + 1];
-                let pdx = px - m.x; let pdy = py - m.y;
-                let dist = pdx * pdx + pdy * pdy;
-                if dist < nearest_dist {
-                    nearest_dist = dist;
-                    target_px = px;
-                    target_py = py;
-                    target_p_idx = p_idx;
+            if is_creative {
+                if m.move_timer <= 0.0 {
+                    let random_angle_deg = (Math::random() * 360.0).floor() as f32;
+                    let random_duration = 1.0 + (Math::random() * 2.0) as f32;
+                    m.move_timer = random_angle_deg + random_duration;
                 }
-            }
+                let angle_deg = m.move_timer.floor();
+                let mut time_left = m.move_timer - angle_deg;
+                time_left -= dt;
+                if time_left <= 0.0 {
+                    m.move_timer = 0.0;
+                } else {
+                    m.move_timer = angle_deg + time_left;
+                    let angle_rad = angle_deg * (std::f32::consts::PI / 180.0);
+                    let dx = angle_rad.cos();
+                    let dy = angle_rad.sin();
+                    let speed = m.speed * 0.5; // wander slower
+                    m.x += dx * speed * dt;
+                    m.y += dy * speed * dt;
+                    m.x = m.x.clamp(1.0, (WORLD_SIZE - 2) as f32);
+                    m.y = m.y.clamp(1.0, (WORLD_SIZE - 2) as f32);
+                }
+            } else {
+                let mut nearest_dist = f32::MAX;
+                let mut target_px = m.x;
+                let mut target_py = m.y;
+                let mut target_p_idx = 0;
 
-            let dx = target_px - m.x; let dy = target_py - m.y;
-            let len = (dx * dx + dy * dy).sqrt();
-            if len > 0.1 {
-                let speed = m.speed;
-                m.x += (dx / len) * speed * dt;
-                m.y += (dy / len) * speed * dt;
-            }
+                for p_idx in 0..(flat_players.len() / 3) {
+                    let px = flat_players[p_idx * 3];
+                    let py = flat_players[p_idx * 3 + 1];
+                    let pdx = px - m.x; let pdy = py - m.y;
+                    let dist = pdx * pdx + pdy * pdy;
+                    if dist < nearest_dist {
+                        nearest_dist = dist;
+                        target_px = px;
+                        target_py = py;
+                        target_p_idx = p_idx;
+                    }
+                }
 
-            if nearest_dist.sqrt() < 1.0 && updated_hps[target_p_idx] > 0.0 { 
-                updated_hps[target_p_idx] -= 10.0 * dt; 
+                let dx = target_px - m.x; let dy = target_py - m.y;
+                let len = (dx * dx + dy * dy).sqrt();
+                if len > 0.1 {
+                    let speed = m.speed;
+                    m.x += (dx / len) * speed * dt;
+                    m.y += (dy / len) * speed * dt;
+                }
+
+                if nearest_dist.sqrt() < 1.0 && updated_hps[target_p_idx] > 0.0 { 
+                    updated_hps[target_p_idx] -= 10.0 * dt; 
+                }
             }
             i += 1;
         }

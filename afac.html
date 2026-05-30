@@ -497,6 +497,7 @@
                 onclick="switchBuildTab('machineries')">Machineries</button>
             <button class="tab-btn" id="tab-logistics" onclick="switchBuildTab('logistics')">Logistics</button>
             <button class="tab-btn" id="tab-tools" onclick="switchBuildTab('tools')">Tools</button>
+            <button class="tab-btn" id="tab-natural" onclick="switchBuildTab('natural')" style="display: none; color:#8bc34a;">🌱 Natural</button>
             <button class="tab-btn" id="tab-calculator" onclick="switchBuildTab('calculator')" style="color:#ffd54f;">🧮
                 Calc</button>
         </div>
@@ -1039,6 +1040,26 @@
         let buildTabActive = 'machineries'; let isPlacingActive = false; let placingItem = { type: null, network: null, id: null, shapeIdx: 0, rot: 0 };
         let lastPlacedPos = { x: -1, y: -1 }; let isMining = false, miningTarget = { x: 0, y: 0, progress: 0, requiredProgress: 20 };
         let creativeMode = false, inventoryVisible = false, craftingVisible = false, placingUIVisible = false, machineUiVisible = false, guideVisible = false, usableVisible = false, gridTerminalVisible = false, networkSelectVisible = false, currentGridTerminal = null, usableTabActive = 'consumables';
+        const NATURAL_BLOCKS = [
+            { id: 3, name: "Tree Log", cat: "Flora", color: "#5d4037" },
+            { id: 2, name: "Tree Leaves", cat: "Flora", color: "#2e7d32" },
+            { id: 5, name: "Grass", cat: "Flora", color: "#2e7d32" },
+            { id: 6, name: "Stone", cat: "Terrain", color: "#616161" },
+            { id: 32, name: "Water Pond", cat: "Liquids", color: "#1e88e5" },
+            { id: 42, name: "Oil Puddle", cat: "Liquids", color: "#212121" },
+            { id: 10, name: "Iron Ore", cat: "Ores", color: "#1565c0" },
+            { id: 13, name: "Copper Ore", cat: "Ores", color: "#e65100" },
+            { id: 16, name: "Coal Ore", cat: "Ores", color: "#212121" },
+            { id: 20, name: "Gold Ore", cat: "Ores", color: "#ffd700" },
+            { id: 23, name: "Silver Ore", cat: "Ores", color: "#c0c0c0" },
+            { id: 26, name: "Tin Ore", cat: "Ores", color: "#78909c" },
+            { id: 29, name: "Nickel Ore", cat: "Ores", color: "#a1887f" },
+            { id: 33, name: "Zinc Ore", cat: "Ores", color: "#b2ebf2" },
+            { id: 36, name: "Aluminium Ore", cat: "Ores", color: "#eceff1" },
+            { id: 39, name: "Lead Ore", cat: "Ores", color: "#5c5c77" },
+            { id: 49, name: "Tungsten Ore", cat: "Ores", color: "#546e7a" },
+            { id: 52, name: "Rhenium Ore", cat: "Ores", color: "#7b1fa2" }
+        ];
         // Benchmark Variables
         let isBenchmarking = false;
         let benchmarkComplete = false;
@@ -1155,6 +1176,11 @@
                     window.isRemoteAction = true;
                     mineComplete();
                     window.isRemoteAction = false;
+                }
+
+                if (msg.type === 'place_natural') {
+                    worldMap[msg.y * WORLD_SIZE + msg.x] = msg.id;
+                    if (gameState.rebuild_monster_paths) gameState.rebuild_monster_paths(player.x, player.y);
                 }
             };
         };
@@ -1595,10 +1621,10 @@
             let f32Players = new Float32Array(playerList);
 
             // Call the newly created WASM multiplayer function
-            let newHps = gameState.update_combat_multiplayer(dt, f32Players);
+            let newHps = gameState.update_combat_multiplayer(dt, f32Players, creativeMode);
 
             // Apply damage back
-            player.hp = newHps[0];
+            player.hp = creativeMode ? 100 : newHps[0];
             for (let i = 1; i < idMap.length; i++) {
                 let pId = idMap[i];
                 if (networkPlayers[pId]) networkPlayers[pId].hp = newHps[i];
@@ -1755,7 +1781,16 @@
                     }
                     return;
                 }
-                if ((e.key === ';' || e.key === ':') && e.shiftKey) { creativeMode = !creativeMode; document.getElementById('creative-mode-status').style.display = creativeMode ? 'block' : 'none'; }
+                if ((e.key === ';' || e.key === ':') && e.shiftKey) {
+                    creativeMode = !creativeMode;
+                    document.getElementById('creative-mode-status').style.display = creativeMode ? 'block' : 'none';
+                    let tabNat = document.getElementById('tab-natural');
+                    if (tabNat) tabNat.style.display = creativeMode ? 'inline-block' : 'none';
+                    if (!creativeMode && buildTabActive === 'natural') {
+                        switchBuildTab('machineries');
+                    }
+                    updatePlacingUI();
+                }
                 if (e.key === "Escape") {
                     if (placementQueue.length > 0) { cancelQueue(); return; }
                     closeAllMenus(); isPlacingActive = false; placingItem.type = null; cancelRouting(); return;
@@ -1831,6 +1866,7 @@
             window.selectMachine = function (id) { placingItem = { type: 'machine', id: id, rot: 0 }; isPlacingActive = true; closeAllMenus(); updateHUD(); };
             window.selectLogistics = function (id, net) { placingItem = { type: 'logistics', id: id, network: net, shapeIdx: 0, rot: 0 }; isPlacingActive = true; closeAllMenus(); updateHUD(); };
             window.activatePickupMode = function () { placingItem = { type: 'tool', id: 'pickup' }; isPlacingActive = true; closeAllMenus(); updateHUD(); };
+            window.selectNatural = function (tileId, name) { placingItem = { type: 'natural', id: tileId, name: name }; isPlacingActive = true; closeAllMenus(); updateHUD(); };
 
 
         }
@@ -2072,6 +2108,11 @@
                 hud.style.display = 'block';
                 hud.style.borderColor = MACHINE_DEFS[placingItem.id].color;
                 document.getElementById('cable-hud-content').innerHTML = `Placing: <span style="color:${MACHINE_DEFS[placingItem.id].color}">${MACHINE_DEFS[placingItem.id].name.toUpperCase()}</span><br><span style="font-size:12px;color:#ccc;">R: Rotate<br>SPACE: Queue | B: Exit</span>${qText}`;
+            } else if (isPlacingActive && placingItem.type === 'natural') {
+                hud.style.display = 'block';
+                let tile = TILE_LOOKUP[placingItem.id];
+                hud.style.borderColor = tile ? tile.color : '#ccc';
+                document.getElementById('cable-hud-content').innerHTML = `Placing Natural: <span style="color:${tile ? tile.color : '#ccc'}">${placingItem.name.toUpperCase()}</span><br><span style="font-size:12px;color:#ccc;">Hold SPACE to Paint Block<br>B: Exit Menu</span>`;
             } else if (placementQueue.length > 0) {
                 hud.style.display = 'block';
                 hud.style.borderColor = '#4caf50';
@@ -3194,6 +3235,21 @@ let p = Math.floor(progressRatio * 100);
             } else if (buildTabActive === 'tools') {
                 count++;
                 htmlBuffer += `<div onclick="activatePickupMode()" style="cursor:pointer;padding:10px;border:2px solid #f44336;border-radius:4px;background:#ffebee22;width:100%;box-sizing:border-box;"><span style="color:#f44336;font-weight:bold;">🛠️ Pickup Mode</span><br><span style="color:#aaa;font-size:11px;">Walk over a machine or pipe and hold SPACE</span></div>`;
+            } else if (buildTabActive === 'natural') {
+                let grouped = {};
+                for (let block of NATURAL_BLOCKS) {
+                    if (searchVal && !block.name.toLowerCase().includes(searchVal)) continue;
+                    count++;
+                    if (!grouped[block.cat]) grouped[block.cat] = [];
+                    grouped[block.cat].push(block);
+                }
+                for (let [cat, blocks] of Object.entries(grouped)) {
+                    let groupColor = cat === 'Flora' ? '#2e7d32' : (cat === 'Terrain' ? '#616161' : (cat === 'Liquids' ? '#1e88e5' : '#b2dfdb'));
+                    htmlBuffer += `<div style="width:100%;margin:4px 0 2px 0;padding:3px 8px;background:${groupColor}22;border-left:3px solid ${groupColor};color:${groupColor};font-size:11px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;border-radius:0 3px 3px 0;">${cat}</div>`;
+                    for (let block of blocks) {
+                        htmlBuffer += `<div onclick="selectNatural(${block.id}, '${block.name}')" style="cursor:pointer;padding:7px 10px;border:2px solid ${block.color}66;border-radius:4px;background:${block.color}11;min-width:120px;flex:1;max-width:48%;"><span style="color:${block.color};font-weight:bold;font-size:13px;">${block.name}</span></div>`;
+                    }
+                }
             }
 
             div.innerHTML = count === 0 && buildTabActive !== 'tools'
@@ -3412,6 +3468,11 @@ let p = Math.floor(progressRatio * 100);
             if (id >= 50000 && activeMachines[id - 50000] && activeMachines[id - 50000].type === 'machine_hub') return;
 
             if ((id >= 2 && id <= 31) || id >= 33 || id >= 50000) {
+                if (creativeMode) {
+                    miningTarget = { x: tx, y: ty, progress: 9999, requiredProgress: 1 };
+                    mineComplete();
+                    return;
+                }
                 isMining = true;
                 let req = 20;
                 // Calculate required progress dynamically based on tools and block type
@@ -4177,6 +4238,18 @@ let p = Math.floor(progressRatio * 100);
                             }
                         } else { floatText(px, py, "No Items", "#d32f2f"); lastPlacedPos = { x: px, y: py }; }
                     }
+                } else if (placingItem.type === 'natural' && keys.space) {
+                    if (px !== lastPlacedPos.x || py !== lastPlacedPos.y) {
+                        let idx = py * WORLD_SIZE + px;
+                        if (worldMap[idx] < 50000) {
+                            worldMap[idx] = placingItem.id;
+                            lastPlacedPos = { x: px, y: py };
+                            if (gameState.rebuild_monster_paths) gameState.rebuild_monster_paths(player.x, player.y);
+                            if (ws && ws.readyState === 1 && !window.isRemoteAction) {
+                                ws.send(JSON.stringify({ type: 'place_natural', x: px, y: py, id: placingItem.id }));
+                            }
+                        }
+                    }
                 }
             }
 
@@ -4368,12 +4441,18 @@ let p = Math.floor(progressRatio * 100);
             }
 
             // Slow Survival Mechanics Drain
-            player.hunger = Math.max(0, player.hunger - dt * 0.05);
-            player.thirst = Math.max(0, player.thirst - dt * 0.1);
-            if (player.hunger === 0 || player.thirst === 0) player.hp = Math.max(0, player.hp - dt * 0.5);
-            else if (player.hp < 100) player.hp = Math.min(100, player.hp + dt * 0.2);
+            if (creativeMode) {
+                player.hp = 100;
+                player.hunger = 100;
+                player.thirst = 100;
+            } else {
+                player.hunger = Math.max(0, player.hunger - dt * 0.05);
+                player.thirst = Math.max(0, player.thirst - dt * 0.1);
+                if (player.hunger === 0 || player.thirst === 0) player.hp = Math.max(0, player.hp - dt * 0.5);
+                else if (player.hp < 100) player.hp = Math.min(100, player.hp + dt * 0.2);
+            }
 
-            if (player.hp <= 0) {
+            if (player.hp <= 0 && !creativeMode) {
                 player.hp = 100; player.hunger = 100; player.thirst = 100;
                 player.x = WORLD_SIZE / 2; player.y = WORLD_SIZE / 2 + 3;
 
@@ -4739,6 +4818,13 @@ if (m.disabledByPLC) {
                     if (placingItem.network === 'rail' && HEAVY_LINES[charToDraw]) charToDraw = HEAVY_LINES[charToDraw];
                     else if ((placingItem.network === 'acid' || placingItem.network === 'hyper_wire' || placingItem.network === 'sicu') && DOUBLE_LINES[charToDraw]) charToDraw = DOUBLE_LINES[charToDraw];
                     pushQuad(charToDraw, sX, sY, LOGISTICS_COLORS[placingItem.network], 0.3);
+                } else if (placingItem.type === 'natural') {
+                    const sX = (px - Math.floor(player.x)) * charWidth + (canvas.width / 2);
+                    const sY = (py - Math.floor(player.y)) * charHeight + (canvas.height / 2);
+                    let tile = TILE_LOOKUP[placingItem.id];
+                    if (tile) {
+                        pushQuad(tile.char, sX, sY, tile.color, 0.4);
+                    }
                 }
             }
 
