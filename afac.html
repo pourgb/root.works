@@ -4538,10 +4538,10 @@ let p = Math.floor(progressRatio * 100);
             for (let y = startY; y <= endY; y++) {
                 if (y < 0 || y >= WORLD_SIZE) continue;
                 const rowOffset = y * WORLD_SIZE;
-                const sY = (y - Math.floor(player.y)) * charHeight + (canvas.height / 2);
+                const sY = (y - player.y) * charHeight + (canvas.height / 2);
                 for (let x = startX; x <= endX; x++) {
                     if (x < 0 || x >= WORLD_SIZE) continue;
-                    const sX = (x - Math.floor(player.x)) * charWidth + (canvas.width / 2);
+                    const sX = (x - player.x) * charWidth + (canvas.width / 2);
 
                     const tileIdx = rowOffset + x;
                     const tileId = worldMap[tileIdx];
@@ -4622,8 +4622,8 @@ if (m.disabledByPLC) {
 
                 for (let y = 0; y < r.h; y++) {
                     for (let x = 0; x < r.w; x++) {
-                        const sX = (m.x + x - Math.floor(player.x)) * charWidth + (canvas.width / 2);
-                        const sY = (m.y + y - Math.floor(player.y)) * charHeight + (canvas.height / 2);
+                        const sX = (m.x + x - player.x) * charWidth + (canvas.width / 2);
+                        const sY = (m.y + y - player.y) * charHeight + (canvas.height / 2);
 
                         let charToDraw = r.art[y][x]; let colorToDraw = m.def.color;
                         if (isWorking && m.def.renderAnim) {
@@ -4634,7 +4634,7 @@ if (m.disabledByPLC) {
                     }
                 }
                 let drawPort = (px, py, color) => {
-                    pushQuad('█', (m.x + px - Math.floor(player.x)) * charWidth + (canvas.width / 2), (m.y + py - Math.floor(player.y)) * charHeight + (canvas.height / 2), color, 0.5);
+                    pushQuad('█', (m.x + px - player.x) * charWidth + (canvas.width / 2), (m.y + py - player.y) * charHeight + (canvas.height / 2), color, 0.5);
                 };
 
                 // Ensure all extended ports are accurately rendered to the player
@@ -4786,25 +4786,25 @@ if (m.disabledByPLC) {
                 if (q.type === 'machine') {
                     for (let y = 0; y < q.rDef.h; y++) {
                         for (let x = 0; x < q.rDef.w; x++) {
-                            const sX = (q.px + x - Math.floor(player.x)) * charWidth + (canvas.width / 2);
-                            const sY = (q.py + y - Math.floor(player.y)) * charHeight + (canvas.height / 2);
+                            const sX = (q.px + x - player.x) * charWidth + (canvas.width / 2);
+                            const sY = (q.py + y - player.y) * charHeight + (canvas.height / 2);
                             pushQuad(q.rDef.art[y][x], sX, sY, q.mDef.color, 0.5);
                         }
                     }
-                    if (q.rDef.outX !== null && q.rDef.outY !== null) pushQuad('█', (q.px + q.rDef.outX - Math.floor(player.x)) * charWidth + (canvas.width / 2), (q.py + q.rDef.outY - Math.floor(player.y)) * charHeight + (canvas.height / 2), '#e65000', 0.5);
-                    if (q.rDef.extraOuts) q.rDef.extraOuts.forEach(p => pushQuad('█', (q.px + p.x - Math.floor(player.x)) * charWidth + (canvas.width / 2), (q.py + p.y - Math.floor(player.y)) * charHeight + (canvas.height / 2), '#e65000', 0.5));
-                    if (q.rDef.out2X !== undefined && q.rDef.out2X !== null && q.rDef.out2Y !== null) pushQuad('█', (q.px + q.rDef.out2X - Math.floor(player.x)) * charWidth + (canvas.width / 2), (q.py + q.rDef.out2Y - Math.floor(player.y)) * charHeight + (canvas.height / 2), '#03a9f4', 0.5);
-                    if (q.rDef.extraOut2s) q.rDef.extraOut2s.forEach(p => pushQuad('█', (q.px + p.x - Math.floor(player.x)) * charWidth + (canvas.width / 2), (q.py + p.y - Math.floor(player.y)) * charHeight + (canvas.height / 2), '#03a9f4', 0.5));
+                    if (q.rDef.outX !== null && q.rDef.outY !== null) pushQuad('█', (q.px + q.rDef.outX - player.x) * charWidth + (canvas.width / 2), (q.py + q.rDef.outY - player.y) * charHeight + (canvas.height / 2), '#e65000', 0.5);
+                    if (q.rDef.extraOuts) q.rDef.extraOuts.forEach(p => pushQuad('█', (q.px + p.x - player.x) * charWidth + (canvas.width / 2), (q.py + p.y - player.y) * charHeight + (canvas.height / 2), '#e65000', 0.5));
+                    if (q.rDef.out2X !== undefined && q.rDef.out2X !== null && q.rDef.out2Y !== null) pushQuad('█', (q.px + q.rDef.out2X - player.x) * charWidth + (canvas.width / 2), (q.py + q.rDef.out2Y - player.y) * charHeight + (canvas.height / 2), '#03a9f4', 0.5);
+                    if (q.rDef.extraOut2s) q.rDef.extraOut2s.forEach(p => pushQuad('█', (q.px + p.x - player.x) * charWidth + (canvas.width / 2), (q.py + p.y - player.y) * charHeight + (canvas.height / 2), '#03a9f4', 0.5));
                 } else if (q.type === 'logistics') {
-                    const sX = (q.px - Math.floor(player.x)) * charWidth + (canvas.width / 2);
-                    const sY = (q.py - Math.floor(player.y)) * charHeight + (canvas.height / 2);
+                    const sX = (q.px - player.x) * charWidth + (canvas.width / 2);
+                    const sY = (q.py - player.y) * charHeight + (canvas.height / 2);
                     let charToDraw = LOGISTICS_SHAPES[q.sId].char;
                     if (q.network === 'rail' && HEAVY_LINES[charToDraw]) charToDraw = HEAVY_LINES[charToDraw];
                     else if ((q.network === 'acid' || q.network === 'hyper_wire' || q.network === 'sicu') && DOUBLE_LINES[charToDraw]) charToDraw = DOUBLE_LINES[charToDraw];
                     pushQuad(charToDraw, sX, sY, LOGISTICS_COLORS[q.network], 0.6);
                 } else if (q.type === 'floor') {
-                    const sX = (q.px - Math.floor(player.x)) * charWidth + (canvas.width / 2);
-                    const sY = (q.py - Math.floor(player.y)) * charHeight + (canvas.height / 2);
+                    const sX = (q.px - player.x) * charWidth + (canvas.width / 2);
+                    const sY = (q.py - player.y) * charHeight + (canvas.height / 2);
                     pushQuad('=', sX, sY, '#424242', 0.6);
                 }
             }
@@ -4818,16 +4818,16 @@ if (m.disabledByPLC) {
                     let r = mDef.rotations[placingItem.rot % mDef.rotations.length];
                     for (let y = 0; y < r.h; y++) {
                         for (let x = 0; x < r.w; x++) {
-                            const sX = (px + x - Math.floor(player.x)) * charWidth + (canvas.width / 2);
-                            const sY = (py + y - Math.floor(player.y)) * charHeight + (canvas.height / 2);
+                            const sX = (px + x - player.x) * charWidth + (canvas.width / 2);
+                            const sY = (py + y - player.y) * charHeight + (canvas.height / 2);
                             pushQuad(r.art[y][x], sX, sY, mDef.color, 0.3); // Reduced alpha to separate from queued halos
                         }
                     }
-                    if (r.outX !== null && r.outY !== null) pushQuad('█', (px + r.outX - Math.floor(player.x)) * charWidth + (canvas.width / 2), (py + r.outY - Math.floor(player.y)) * charHeight + (canvas.height / 2), '#e65000', 0.3);
-                    if (r.out2X !== undefined && r.out2X !== null && r.out2Y !== null) pushQuad('█', (px + r.out2X - Math.floor(player.x)) * charWidth + (canvas.width / 2), (py + r.out2Y - Math.floor(player.y)) * charHeight + (canvas.height / 2), '#03a9f4', 0.3);
+                    if (r.outX !== null && r.outY !== null) pushQuad('█', (px + r.outX - player.x) * charWidth + (canvas.width / 2), (py + r.outY - player.y) * charHeight + (canvas.height / 2), '#e65000', 0.3);
+                    if (r.out2X !== undefined && r.out2X !== null && r.out2Y !== null) pushQuad('█', (px + r.out2X - player.x) * charWidth + (canvas.width / 2), (py + r.out2Y - player.y) * charHeight + (canvas.height / 2), '#03a9f4', 0.3);
                 } else if (placingItem.type === 'logistics') {
-                    const sX = (px - Math.floor(player.x)) * charWidth + (canvas.width / 2);
-                    const sY = (py - Math.floor(player.y)) * charHeight + (canvas.height / 2);
+                    const sX = (px - player.x) * charWidth + (canvas.width / 2);
+                    const sY = (py - player.y) * charHeight + (canvas.height / 2);
                     let shapeGrp = SHAPE_ORDER[placingItem.shapeIdx];
                     let sId = SHAPE_GROUPS[shapeGrp][placingItem.rot % SHAPE_GROUPS[shapeGrp].length];
                     let charToDraw = LOGISTICS_SHAPES[sId].char;
@@ -4835,8 +4835,8 @@ if (m.disabledByPLC) {
                     else if ((placingItem.network === 'acid' || placingItem.network === 'hyper_wire' || placingItem.network === 'sicu') && DOUBLE_LINES[charToDraw]) charToDraw = DOUBLE_LINES[charToDraw];
                     pushQuad(charToDraw, sX, sY, LOGISTICS_COLORS[placingItem.network], 0.3);
                 } else if (placingItem.type === 'natural') {
-                    const sX = (px - Math.floor(player.x)) * charWidth + (canvas.width / 2);
-                    const sY = (py - Math.floor(player.y)) * charHeight + (canvas.height / 2);
+                    const sX = (px - player.x) * charWidth + (canvas.width / 2);
+                    const sY = (py - player.y) * charHeight + (canvas.height / 2);
                     let tile = TILE_LOOKUP[placingItem.id];
                     if (tile) {
                         pushQuad(tile.char, sX, sY, tile.color, 0.4);
@@ -4846,8 +4846,8 @@ if (m.disabledByPLC) {
 
             // --- MINING TARGET CRACK OVERLAY ---
             if (isMining) {
-                const mX = (miningTarget.x - Math.floor(player.x)) * charWidth + (canvas.width / 2);
-                const mY = (miningTarget.y - Math.floor(player.y)) * charHeight + (canvas.height / 2);
+                const mX = (miningTarget.x - player.x) * charWidth + (canvas.width / 2);
+                const mY = (miningTarget.y - player.y) * charHeight + (canvas.height / 2);
                 const p = miningTarget.progress / miningTarget.requiredProgress;
 
                 pushQuad('█', mX, mY, '#ffeb3b', 0.3);
