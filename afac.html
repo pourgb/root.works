@@ -4079,10 +4079,12 @@ let p = Math.floor(progressRatio * 100);
             // Helper to check if a position collides with any machines
             const playerRadius = 0.35;
             function isCollidingAt(x, y) {
-                let minX = Math.floor(x - playerRadius);
-                let maxX = Math.floor(x + playerRadius);
-                let minY = Math.floor(y - playerRadius);
-                let maxY = Math.floor(y + playerRadius);
+                let cx = x + 0.5;
+                let cy = y + 0.5;
+                let minX = Math.floor(cx - playerRadius);
+                let maxX = Math.floor(cx + playerRadius);
+                let minY = Math.floor(cy - playerRadius);
+                let maxY = Math.floor(cy + playerRadius);
 
                 for (let ty = minY; ty <= maxY; ty++) {
                     for (let tx = minX; tx <= maxX; tx++) {
