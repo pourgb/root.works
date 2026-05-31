@@ -1208,6 +1208,72 @@
         window.LOGISTICS_ITEMS = LOGISTICS_ITEMS;
         window.getCreativeMode = () => creativeMode;
 
+        Object.defineProperty(window, 'activeMachines', {
+            get: () => activeMachines,
+            set: (v) => activeMachines = v,
+            configurable: true
+        });
+        Object.defineProperty(window, 'worldMap', {
+            get: () => worldMap,
+            set: (v) => worldMap = v,
+            configurable: true
+        });
+        Object.defineProperty(window, 'WORLD_SIZE', {
+            get: () => WORLD_SIZE,
+            configurable: true
+        });
+        Object.defineProperty(window, 'mapPipes', {
+            get: () => mapPipes,
+            configurable: true
+        });
+        Object.defineProperty(window, 'hasPipeMap', {
+            get: () => hasPipeMap,
+            configurable: true
+        });
+        Object.defineProperty(window, 'powerGridNeedsUpdate', {
+            get: () => powerGridNeedsUpdate,
+            set: (v) => powerGridNeedsUpdate = v,
+            configurable: true
+        });
+        Object.defineProperty(window, 'dataGridNeedsUpdate', {
+            get: () => dataGridNeedsUpdate,
+            set: (v) => dataGridNeedsUpdate = v,
+            configurable: true
+        });
+        Object.defineProperty(window, 'floatText', {
+            get: () => floatText,
+            configurable: true
+        });
+        Object.defineProperty(window, 'gameState', {
+            get: () => gameState,
+            configurable: true
+        });
+        Object.defineProperty(window, 'itemsOnBelts', {
+            get: () => itemsOnBelts,
+            set: (v) => itemsOnBelts = v,
+            configurable: true
+        });
+        Object.defineProperty(window, 'activeRoutes', {
+            get: () => activeRoutes,
+            set: (v) => activeRoutes = v,
+            configurable: true
+        });
+        Object.defineProperty(window, 'cropProgress', {
+            get: () => cropProgress,
+            set: (v) => cropProgress = v,
+            configurable: true
+        });
+        Object.defineProperty(window, 'updateRouteMap', {
+            get: () => updateRouteMap,
+            configurable: true
+        });
+        Object.defineProperty(window, 'updateHepaNetwork', {
+            get: () => updateHepaNetwork,
+            configurable: true
+        });
+        window.ITEM_TO_ID = ITEM_TO_ID;
+        window.ID_TO_ITEM = ID_TO_ITEM;
+
         // Agent Controller Support: Expose required functions and variables to window
         Object.defineProperty(window, 'placementQueue', {
             get: () => placementQueue,
