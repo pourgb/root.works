@@ -635,7 +635,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    FarmStation[Farming Drone Station] -->|Define corner 1 & corner 2| FarmZone[Rectangular Farm Zone]
+    FarmStation[Farming Drone Station] -->|Corner 1 and Corner 2 define area| FarmZone[Rectangular Farm Zone]
     FarmZone -->|Drone plants seeds| GrowingCrops[Growing Crops]
     GrowingCrops -->|Mature| HarvestReady[Harvestable Tile]
     FarmStation -->|Drone harvests| HarvestedItems[Harvested Items]
@@ -699,7 +699,7 @@ flowchart TD
     FuelRod[uranium_fuel_rod] --> Reactor[Fission Reactor Core]
     Water[Water Coolant] --> Reactor
     GraphiteRod["graphite_control_rod<br/>Optional dampener"] --> Reactor
-    Reactor -->|+320 steam per 40 water| Steam[pressurized_steam]
+    Reactor -->|320 steam per 40 water consumed| Steam[pressurized_steam]
     Reactor --> NWaste[nuclear_waste]
     Reactor -->|Heat| TempGauge[Core Temperature K]
     Steam --> Turbine[Steam Turbine]
