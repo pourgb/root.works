@@ -178,13 +178,13 @@ The factory is designed across **8 distinct industrial eras**. Each stage builds
 
 ```mermaid
 graph LR
-    S1[Stage 1\nHand Tools] --> S2[Stage 2\nSteam & Kinetics]
-    S2 --> S3[Stage 3\nElectric Grid]
-    S3 --> S4[Stage 4\nPetrochemicals]
-    S4 --> S5[Stage 5\nSemiconductors]
-    S5 --> S6[Stage 6\nNuclear Fission]
-    S6 --> S7[Stage 7\nFusion & Plasma]
-    S7 --> S8[Stage 8\nAntimatter]
+    S1["Stage 1<br/>Hand Tools"] --> S2["Stage 2<br/>Steam & Kinetics"]
+    S2 --> S3["Stage 3<br/>Electric Grid"]
+    S3 --> S4["Stage 4<br/>Petrochemicals"]
+    S4 --> S5["Stage 5<br/>Semiconductors"]
+    S5 --> S6["Stage 6<br/>Nuclear Fission"]
+    S6 --> S7["Stage 7<br/>Fusion & Plasma"]
+    S7 --> S8["Stage 8<br/>Antimatter"]
 ```
 
 ---
@@ -209,7 +209,7 @@ graph LR
 
 ```mermaid
 flowchart LR
-    Coal --> CoalPump[Coal Pump\nExtracts Water]
+    Coal --> CoalPump["Coal Pump<br/>Extracts Water"]
     Water --> Boiler[Brass Boiler]
     Coal --> Boiler
     Boiler --> Steam
@@ -300,14 +300,14 @@ flowchart LR
     Flotation --> Calcin[Calcination Kiln]
     Calcin --> ArcPure[Arc Purifier]
     ArcPure --> PureSilica[pure_silica]
-    PureSilica --> CzochralskiPuller[Czochralski Puller\n requires HEPA zone]
+    PureSilica --> CzochralskiPuller["Czochralski Puller<br/> requires HEPA zone"]
     CzochralskiPuller --> SiliconIngot[silicon_ingot]
     SiliconIngot --> WaferSaw[Wafer Saw]
     WaferSaw --> RawWafer[raw_wafer]
     RawWafer --> WaferPolisher[Wafer Polisher]
     WaferPolisher --> Wafer[polished_wafer]
-    Wafer --> Lithographer[Lithographer\n UV mask exposure]
-    Lithographer --> CPU_IC[cpu_ic / ram_ic]
+    Wafer --> Lithographer["Lithographer<br/> UV mask exposure"]
+    Lithographer --> CPU_IC["cpu_ic / ram_ic"]
 ```
 
 > **HEPA Containment**: The `machine_czochralski_puller` and `machine_lithographer` require a `machine_hepa_purifier` within **13x13 tiles** (6 block radius). Without it, they refuse to operate.
@@ -361,8 +361,8 @@ flowchart TD
 flowchart TD
     Deuterium --> FusionReactor[Fusion Reactor]
     Tritium --> FusionReactor
-    LiquidN2[Liquid Nitrogen\nCryocooling] --> FusionReactor
-    FusionCharge[Fusion Chargers\n 1,000,000 kJ to ignite] --> FusionReactor
+    LiquidN2["Liquid Nitrogen<br/>Cryocooling"] --> FusionReactor
+    FusionCharge["Fusion Chargers<br/> 1,000,000 kJ to ignite"] --> FusionReactor
     FusionReactor --> SuperheatedN2[superheated_nitrogen]
     FusionReactor --> MassivePower[Extreme Power Output]
     MassivePower --> SiCuCable[SiCu Cable Manifold]
@@ -396,7 +396,7 @@ flowchart LR
     AntimatterPellet --> ContainmentVessel[Antimatter Containment Vessel]
     ContainmentVessel --> AntimatterCell[antimatter_cell]
     AntimatterCell --> AnnihilationReactor[Annihilation Reactor]
-    QuantumStabilizer[Quantum Stabilizer\nwithin 7 tiles, 1M kW] --> AnnihilationReactor
+    QuantumStabilizer["Quantum Stabilizer<br/>within 7 tiles, 1M kW"] --> AnnihilationReactor
     AnnihilationReactor --> VastPower[Vast Power Output]
 ```
 
@@ -431,11 +431,11 @@ All standard ores can be smelted in both the coal and electric furnace:
 
 ```mermaid
 graph TD
-    A[Coal Burner\n ~100 kW] --> P[Power Grid]
-    B[Steam Turbine\n ~1,000 kW] --> P
-    C[MHD Generator\n ~50,000 kW] --> P
-    D[Fusion Reactor\n ~500,000 kW] --> P
-    E[Annihilation Reactor\n ~5,000,000 kW] --> P
+    A["Coal Burner<br/> ~100 kW"] --> P[Power Grid]
+    B["Steam Turbine<br/> ~1,000 kW"] --> P
+    C["MHD Generator<br/> ~50,000 kW"] --> P
+    D["Fusion Reactor<br/> ~500,000 kW"] --> P
+    E["Annihilation Reactor<br/> ~5,000,000 kW"] --> P
     P --> F[Factory Machines]
 ```
 
@@ -449,14 +449,14 @@ The **Digital Data Grid** centralizes all storage into one indexed virtual inven
 
 ```mermaid
 flowchart TD
-    ImportUplink[Import Uplink\nDrains adjacent machines] --> CDH[Central Digital Hub\nCDH - Network Brain\n20 kW baseline]
-    CDH --> DiskDrive[Digital Disk Drive\n5,000 items]
-    CDH --> FluidTank[Digital Fluid Tank\n50,000 units]
-    CDH --> GasTank[Digital Gas Tank\n50,000 units]
-    CDH --> AcidTank[Digital Acid Tank\n50,000 units]
-    CDH --> Crafter[Digital Crafter\nPattern-based autocrafting]
-    CDH --> ExportDownlink[Export Downlink\nPushes items to pipes]
-    CDH --> GridTerminal[Grid Crafting Terminal\nPlayer access]
+    ImportUplink["Import Uplink<br/>Drains adjacent machines"] --> CDH["Central Digital Hub<br/>CDH - Network Brain<br/>20 kW baseline"]
+    CDH --> DiskDrive["Digital Disk Drive<br/>5,000 items"]
+    CDH --> FluidTank["Digital Fluid Tank<br/>50,000 units"]
+    CDH --> GasTank["Digital Gas Tank<br/>50,000 units"]
+    CDH --> AcidTank["Digital Acid Tank<br/>50,000 units"]
+    CDH --> Crafter["Digital Crafter<br/>Pattern-based autocrafting"]
+    CDH --> ExportDownlink["Export Downlink<br/>Pushes items to pipes"]
+    CDH --> GridTerminal["Grid Crafting Terminal<br/>Player access"]
 ```
 
 ### Digital Grid Infrastructure
@@ -476,23 +476,17 @@ flowchart TD
 ### Automated Crafting Jobs
 
 ```mermaid
-sequenceDiagram
-    participant Player
-    participant Terminal as Grid Terminal
-    participant CDH as Central Digital Hub
-    participant Crafter as Digital Crafter
-    participant Storage
-
-    Player->>Terminal: Request craft: cpu_ic x10
-    Terminal->>CDH: Submit job
-    CDH->>Storage: Check ingredients
-    Storage-->>CDH: Ingredients available / missing
-    CDH->>CDH: Queue sub-jobs for missing ingredients
-    CDH->>Crafter: Dispatch job
-    Crafter->>Storage: Pull ingredients
-    Crafter->>Crafter: Execute recipe
-    Crafter->>Storage: Return output items
-    Crafter->>CDH: Vacuum-extract leftovers
+flowchart TD
+    Player["Player"] -->|Request craft: cpu_ic x10| Terminal[Grid Terminal]
+    Terminal -->|Submit job| CDH[Central Digital Hub]
+    CDH -->|Check ingredients| Storage[Storage Drives]
+    Storage -->|Ingredients available| CDH
+    CDH -->|Missing? Queue sub-jobs| CDH2[Sub-Job Queue]
+    CDH2 -->|Dispatch job| Crafter[Digital Crafter]
+    Crafter -->|Pull ingredients| Storage
+    Crafter -->|Execute recipe| Output[Output Items]
+    Output -->|Return to storage| Storage
+    Crafter -->|Vacuum-extract leftovers| Storage
 ```
 
 **Rules:**
@@ -522,7 +516,7 @@ A **PLC Logic Processor** connected via Quartz Data Cables compiles your script 
 flowchart LR
     PhysicalMachine -->|metric reading| PGP_Input[PGP Input Node]
     DigitalStorage -->|item count / power| GP_Input[GP Input Node]
-    PGP_Input -->|IN channel| PLC[PLC Processor\nAST Logic Engine]
+    PGP_Input -->|IN channel| PLC["PLC Processor<br/>AST Logic Engine"]
     GP_Input -->|IN channel| PLC
     PLC -->|OUT channel| GP_Output[GP Output Node]
     PLC -->|OUT channel| PGP_Output[PGP Output Node]
@@ -632,8 +626,8 @@ Drones extend your logistics reach for tasks that pipes cannot handle — partic
 
 ```mermaid
 flowchart LR
-    DroneInput[Drone Input\nSource buffer] -->|Drone picks up| CarrierStation[Carrier Drone Station]
-    CarrierStation -->|Flies items| DroneOutput[Drone Output\nDestination buffer]
+    DroneInput["Drone Input<br/>Source buffer"] -->|Drone picks up| CarrierStation[Carrier Drone Station]
+    CarrierStation -->|Flies items| DroneOutput["Drone Output<br/>Destination buffer"]
     DroneOutput -->|Ready for belt| NextMachine[Next Machine]
 ```
 
@@ -664,9 +658,9 @@ When pipe networks become impractical for long-distance transport, the automated
 
 ```mermaid
 flowchart LR
-    Depot[Train Depot\nBuilds & fuels trains] --> LocoWagon[Locomotive + Wagons]
-    LocoWagon --> StopA[Train Stop A\nLoading Station]
-    StopA -->|Condition: Wagon Full| StopB[Train Stop B\nUnloading Station]
+    Depot["Train Depot<br/>Builds & fuels trains"] --> LocoWagon[Locomotive + Wagons]
+    LocoWagon --> StopA["Train Stop A<br/>Loading Station"]
+    StopA -->|Condition: Wagon Full| StopB["Train Stop B<br/>Unloading Station"]
     StopB -->|Condition: Wagon Empty| StopA
 ```
 
@@ -704,12 +698,12 @@ flowchart LR
 flowchart TD
     FuelRod[uranium_fuel_rod] --> Reactor[Fission Reactor Core]
     Water[Water Coolant] --> Reactor
-    GraphiteRod[graphite_control_rod\nOptional dampener] --> Reactor
+    GraphiteRod["graphite_control_rod<br/>Optional dampener"] --> Reactor
     Reactor -->|+320 steam per 40 water| Steam[pressurized_steam]
     Reactor --> NWaste[nuclear_waste]
     Reactor -->|Heat| TempGauge[Core Temperature K]
     Steam --> Turbine[Steam Turbine]
-    Turbine --> Electricity[~1,000 kW]
+    Turbine --> Electricity["~1,000 kW"]
     NWaste -->|Gold-Lead Pipe| WasteStorage[Waste Storage]
 ```
 
@@ -727,13 +721,13 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Charger[Fusion Chargers\n Charge to 1,000,000 kJ] --> FusionCore[Fusion Reactor Core]
+    Charger["Fusion Chargers<br/> Charge to 1,000,000 kJ"] --> FusionCore[Fusion Reactor Core]
     Deuterium --> FusionCore
     Tritium --> FusionCore
-    LiqN2[Liquid Nitrogen\nCryocooling] --> FusionCore
+    LiqN2["Liquid Nitrogen<br/>Cryocooling"] --> FusionCore
     FusionCore --> SuperN2[superheated_nitrogen]
-    FusionCore --> MassivePower[~500,000 kW]
-    MassivePower --> SiCu[SiCu Cable Manifold\nRequired]
+    FusionCore --> MassivePower["~500,000 kW"]
+    MassivePower --> SiCu["SiCu Cable Manifold<br/>Required"]
     SiCu --> MegaTx[Mega Transformers]
     MegaTx --> Grid[Power Grid]
 ```
@@ -752,9 +746,9 @@ flowchart TD
 flowchart TD
     AntimatterCell[antimatter_cell] --> Annihilator[Annihilation Reactor]
     Matter --> Annihilator
-    QStabilizer[Quantum Stabilizer\nWithin 7 tiles\n1,000,000 kW] --> Annihilator
-    Annihilator --> VastPower[~5,000,000 kW]
-    Annihilator --> OntologicalIndex[Ontological Stability Index\n 0% = REALITY COLLAPSE]
+    QStabilizer["Quantum Stabilizer<br/>Within 7 tiles<br/>1,000,000 kW"] --> Annihilator
+    Annihilator --> VastPower["~5,000,000 kW"]
+    Annihilator --> OntologicalIndex["Ontological Stability Index<br/> 0% = REALITY COLLAPSE"]
 ```
 
 **Stability rules:**
@@ -767,10 +761,10 @@ flowchart TD
 
 ```mermaid
 graph LR
-    CoalGen["Coal Generator\n~100 kW"] --> Mid["Mid-Tier\nSteam Turbine\n~1,000 kW"]
-    Mid --> High["High-Tier\nMHD Generator\n~50,000 kW"]
-    High --> Fusion["Fusion Reactor\n~500,000 kW"]
-    Fusion --> Annihilation["Annihilation Reactor\n~5,000,000 kW"]
+    CoalGen["Coal Generator<br/>~100 kW"] --> Mid["Mid-Tier<br/>Steam Turbine<br/>~1,000 kW"]
+    Mid --> High["High-Tier<br/>MHD Generator<br/>~50,000 kW"]
+    High --> Fusion["Fusion Reactor<br/>~500,000 kW"]
+    Fusion --> Annihilation["Annihilation Reactor<br/>~5,000,000 kW"]
 ```
 
 ---
@@ -783,9 +777,9 @@ Operating high-tier machinery carries serious risks. Neglect cooling, control sy
 
 ```mermaid
 graph TD
-    PlasmaBreach[Plasma Breach\n10-tile radius] --> Meltdown[Nuclear Meltdown\n25-tile radius]
-    Meltdown --> Supernova[Supernova Collapse\n150-tile radius]
-    Supernova --> ParadoxCollapse[Paradoxical Reality Collapse\nEverything erased]
+    PlasmaBreach["Plasma Breach<br/>10-tile radius"] --> Meltdown["Nuclear Meltdown<br/>25-tile radius"]
+    Meltdown --> Supernova["Supernova Collapse<br/>150-tile radius"]
+    Supernova --> ParadoxCollapse["Paradoxical Reality Collapse<br/>Everything erased"]
 
     style PlasmaBreach fill:#ff7043,color:#fff
     style Meltdown fill:#e53935,color:#fff
@@ -830,7 +824,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    WaterStarved[Water Starved] --> CoreTemp[Core Temp 10,000 K]
+    WaterStarved[Water Starved] --> CoreTemp["Core Temp 10,000 K"]
     WasteBlocked[Waste Buffer Full] --> CoreTemp
     NoControlRod[No Control Rods] --> CoreTemp
     CoreTemp --> Meltdown[25-Tile Nuclear Blast]
@@ -859,8 +853,8 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    N2Starved[Liquid Nitrogen Starved\n+50K per sec] --> FusionCrit[Fusion Temp 500,000 K]
-    SiCuSevered[SiCu Manifold Broken\n+100K per sec] --> FusionCrit
+    N2Starved["Liquid Nitrogen Starved<br/>+50K per sec"] --> FusionCrit["Fusion Temp 500,000 K"]
+    SiCuSevered["SiCu Manifold Broken<br/>+100K per sec"] --> FusionCrit
     FusionCrit --> Supernova[150-Tile Supernova Blast]
     Supernova --> AllMachinesGone[All Machines Destroyed]
     Supernova --> FusedGlass[Ground → Fused Glass]
@@ -876,13 +870,13 @@ flowchart LR
 **Trigger**: Ontological Stability index of an active Annihilation Reactor falls to **0%**.
 
 ```mermaid
-stateDiagram-v2
-    [*] --> Stable: Quantum Stabilizer Online
-    Stable --> Degrading: Stabilizer offline
-    Degrading --> Degrading: -15% per second
-    Degrading --> Stable: Stabilizer back online
-    Degrading --> Collapse: Index reaches 0%
-    Collapse --> [*]: REALITY ERASED
+flowchart LR
+    Online["Quantum Stabilizer Online"] -->|Stabilizer goes offline| Degrading["Index Degrading<br/>-15% per second"]
+    Degrading -->|Stabilizer restored| Online
+    Degrading -->|Index reaches 0%| Collapse["REALITY COLLAPSE<br/>Everything erased"]
+    style Online fill:#1b5e20,color:#fff
+    style Degrading fill:#e65100,color:#fff
+    style Collapse fill:#000,color:#f44
 ```
 
 **Index Maintenance**:
@@ -906,9 +900,9 @@ Players must manage three survival stats at all times:
 
 ```mermaid
 graph LR
-    Food[Food / Bread] --> Hunger[Hunger Bar]
+    Food["Food / Bread"] --> Hunger[Hunger Bar]
     Water[Drinking Water] --> Thirst[Thirst Bar]
-    Hunger -->|Depleted| HPDrain[HP Drains\n0.5/sec]
+    Hunger -->|Depleted| HPDrain["HP Drains<br/>0.5/sec"]
     Thirst -->|Depleted| HPDrain
     HPDrain -->|HP = 0| Death[Respawn at World Center]
 ```
