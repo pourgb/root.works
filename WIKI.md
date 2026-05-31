@@ -362,7 +362,7 @@ flowchart TD
     Deuterium --> FusionReactor[Fusion Reactor]
     Tritium --> FusionReactor
     LiquidN2["Liquid Nitrogen<br/>Cryocooling"] --> FusionReactor
-    FusionCharge["Fusion Chargers<br/> 1,000,000 kJ to ignite"] --> FusionReactor
+    FusionCharge["Fusion Chargers<br/> 1M kJ to ignite"] --> FusionReactor
     FusionReactor --> SuperheatedN2[superheated_nitrogen]
     FusionReactor --> MassivePower[Extreme Power Output]
     MassivePower --> SiCuCable[SiCu Cable Manifold]
@@ -432,10 +432,10 @@ All standard ores can be smelted in both the coal and electric furnace:
 ```mermaid
 graph TD
     A["Coal Burner<br/> ~100 kW"] --> P[Power Grid]
-    B["Steam Turbine<br/> ~1,000 kW"] --> P
-    C["MHD Generator<br/> ~50,000 kW"] --> P
-    D["Fusion Reactor<br/> ~500,000 kW"] --> P
-    E["Annihilation Reactor<br/> ~5,000,000 kW"] --> P
+    B["Steam Turbine<br/> ~1000 kW"] --> P
+    C["MHD Generator<br/> ~50000 kW"] --> P
+    D["Fusion Reactor<br/> ~500000 kW"] --> P
+    E["Annihilation Reactor<br/> ~5000000 kW"] --> P
     P --> F[Factory Machines]
 ```
 
@@ -464,10 +464,10 @@ flowchart TD
 | Component | Function |
 |:---|:---|
 | **Central Digital Hub (CDH)** | Master routing brain — scans storage, prioritizes imports/exports, coordinates crafters. Requires 20 kW. |
-| **Digital Disk Drive** | Stores up to 5,000 solid items |
-| **Digital Fluid Tank** | Stores 50,000 units: Water, Lava, Brine, Heavy Water, Sour Water |
-| **Digital Gas Tank** | Stores 50,000 units: Steam, Oxygen, Hydrogen, Nitrogen, Liquid Nitrogen, Chlorine |
-| **Digital Acid Tank** | Stores 50,000 units: Sulfuric Acid |
+| **Digital Disk Drive** | Stores up to 5000 solid items |
+| **Digital Fluid Tank** | Stores 50000 units: Water, Lava, Brine, Heavy Water, Sour Water |
+| **Digital Gas Tank** | Stores 50000 units: Steam, Oxygen, Hydrogen, Nitrogen, Liquid Nitrogen, Chlorine |
+| **Digital Acid Tank** | Stores 50000 units: Sulfuric Acid |
 | **Import Uplink** | Auto-drains adjacent physical buffers into digital storage |
 | **Export Downlink** | Continuously pulls items from digital storage into pipes |
 | **Digital Exporter** | Scans machine in front of its port, extracts products to CDH |
@@ -703,7 +703,7 @@ flowchart TD
     Reactor --> NWaste[nuclear_waste]
     Reactor -->|Heat| TempGauge[Core Temperature K]
     Steam --> Turbine[Steam Turbine]
-    Turbine --> Electricity["~1,000 kW"]
+    Turbine --> Electricity["~1000 kW"]
     NWaste -->|Gold-Lead Pipe| WasteStorage[Waste Storage]
 ```
 
@@ -721,12 +721,12 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Charger["Fusion Chargers<br/> Charge to 1,000,000 kJ"] --> FusionCore[Fusion Reactor Core]
+    Charger["Fusion Chargers<br/> Charge to 1000000 kJ"] --> FusionCore[Fusion Reactor Core]
     Deuterium --> FusionCore
     Tritium --> FusionCore
     LiqN2["Liquid Nitrogen<br/>Cryocooling"] --> FusionCore
     FusionCore --> SuperN2[superheated_nitrogen]
-    FusionCore --> MassivePower["~500,000 kW"]
+    FusionCore --> MassivePower["~500000 kW"]
     MassivePower --> SiCu["SiCu Cable Manifold<br/>Required"]
     SiCu --> MegaTx[Mega Transformers]
     MegaTx --> Grid[Power Grid]
@@ -738,7 +738,7 @@ flowchart TD
 |:---|:---|
 | Liquid Nitrogen below 10 units/cycle | +50,000K per second |
 | SiCu cable manifold broken/missing | +100,000K per second |
-| Core reaches 500,000K | **SUPERNOVA COLLAPSE** |
+| Core reaches 500000K | **SUPERNOVA COLLAPSE** |
 
 ### Annihilation Reactor (End-Game)
 
@@ -746,8 +746,8 @@ flowchart TD
 flowchart TD
     AntimatterCell[antimatter_cell] --> Annihilator[Annihilation Reactor]
     Matter --> Annihilator
-    QStabilizer["Quantum Stabilizer<br/>Within 7 tiles<br/>1,000,000 kW"] --> Annihilator
-    Annihilator --> VastPower["~5,000,000 kW"]
+    QStabilizer["Quantum Stabilizer<br/>Within 7 tiles<br/>1M kW"] --> Annihilator
+    Annihilator --> VastPower["~5000000 kW"]
     Annihilator --> OntologicalIndex["Ontological Stability Index<br/> 0% = REALITY COLLAPSE"]
 ```
 
@@ -761,10 +761,10 @@ flowchart TD
 
 ```mermaid
 graph LR
-    CoalGen["Coal Generator<br/>~100 kW"] --> Mid["Mid-Tier<br/>Steam Turbine<br/>~1,000 kW"]
-    Mid --> High["High-Tier<br/>MHD Generator<br/>~50,000 kW"]
-    High --> Fusion["Fusion Reactor<br/>~500,000 kW"]
-    Fusion --> Annihilation["Annihilation Reactor<br/>~5,000,000 kW"]
+    CoalGen["Coal Generator<br/>~100 kW"] --> Mid["Mid-Tier<br/>Steam Turbine<br/>~1000 kW"]
+    Mid --> High["High-Tier<br/>MHD Generator<br/>~50000 kW"]
+    High --> Fusion["Fusion Reactor<br/>~500000 kW"]
+    Fusion --> Annihilation["Annihilation Reactor<br/>~5000000 kW"]
 ```
 
 ---
@@ -824,7 +824,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    WaterStarved[Water Starved] --> CoreTemp["Core Temp 10,000 K"]
+    WaterStarved[Water Starved] --> CoreTemp["Core Temp 10000 K"]
     WasteBlocked[Waste Buffer Full] --> CoreTemp
     NoControlRod[No Control Rods] --> CoreTemp
     CoreTemp --> Meltdown[25-Tile Nuclear Blast]
