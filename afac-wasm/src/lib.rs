@@ -742,7 +742,22 @@ impl GameState {
                 let item = &aw.belt_items[idx];
                 if let Some(route) = aw.routes.get(item.route_id) {
                     if item.route_idx + 1 >= route.path.len() {
-                        for (dx, dy) in &[(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
+                        // Determine the forward direction the item came from.
+                        // We use the last TWO tiles in the route path to figure out the
+                        // approach direction, and ONLY look for the destination machine in
+                        // that forward direction. This prevents the item from being falsely
+                        // "delivered" to the source machine adjacent to the last pipe tile.
+                        let last_tile = route.path[route.path.len() - 1];
+                        let dirs_to_check: Vec<(i32, i32)> = if route.path.len() >= 2 {
+                            let prev_tile = route.path[route.path.len() - 2];
+                            let fwd_dx = last_tile.0 as i32 - prev_tile.0 as i32;
+                            let fwd_dy = last_tile.1 as i32 - prev_tile.1 as i32;
+                            vec![(fwd_dx, fwd_dy)]
+                        } else {
+                            // Single-tile route: fall back to all 4 dirs
+                            vec![(1i32, 0i32), (-1, 0), (0, 1), (0, -1)]
+                        };
+                        for (dx, dy) in &dirs_to_check {
                             let nx = item.x as i32 + dx; let ny = item.y as i32 + dy;
                             if nx >= 0 && nx < WORLD_SIZE as i32 && ny >= 0 && ny < WORLD_SIZE as i32 {
                                 let n_idx = (ny as usize) * WORLD_SIZE + (nx as usize);

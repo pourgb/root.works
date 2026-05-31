@@ -206,8 +206,8 @@
             <button class="tab-btn" id="tab-wiki" onclick="switchGuideTab('wiki')">Auto-Wiki (JEI)</button>
         </div>
         <div id="guide-controls">
-            <div class="ui-row">Move: <span class="key">W A S D</span> | Sprint: <span class="key">SHIFT</span></div>
-            <div class="ui-row">Mine/Pickup: <span class="key">F</span> | Machine UI: <span class="key">E</span></div>
+            <div class="ui-row">Move: <span class="key">W A S D</span> | Sprint: <span class="key">SHIFT</span> | Inventory: <span class="key">E</span></div>
+            <div class="ui-row">Mine/Pickup: <span class="key">F</span> | Machine UI: <span class="key">Right Click</span></div>
             <div class="ui-row">Crafting: <span class="key">C</span> | Build Menu: <span class="key">B</span></div>
             <div class="ui-row">Tools/Food: <span class="key">U</span> | Debug Dump: <span class="key">SHIFT+J</span>
             </div>
@@ -1040,6 +1040,417 @@
         let buildTabActive = 'machineries'; let isPlacingActive = false; let placingItem = { type: null, network: null, id: null, shapeIdx: 0, rot: 0 };
         let lastPlacedPos = { x: -1, y: -1 }; let isMining = false, miningTarget = { x: 0, y: 0, progress: 0, requiredProgress: 20 };
         let creativeMode = false, inventoryVisible = false, craftingVisible = false, placingUIVisible = false, machineUiVisible = false, guideVisible = false, usableVisible = false, gridTerminalVisible = false, networkSelectVisible = false, currentGridTerminal = null, usableTabActive = 'consumables';
+
+        // --- NEW MOUSE-CENTRIC SYSTEM VARIABLES & HELPERS nyan! >w< ---
+        let mouseX = 0, mouseY = 0;
+        let mouseTileX = 0, mouseTileY = 0;
+        let isDragging = false;
+        let dragStartTile = null;
+        let dragDirectionPreference = null;
+
+        function getDragPipePathCoords(x1, y1, x2, y2) {
+            let path = [];
+            if (x1 === x2 && y1 === y2) {
+                return [{ x: x1, y: y1 }];
+            }
+            if (dragDirectionPreference === null) {
+                dragDirectionPreference = Math.abs(x2 - x1) >= Math.abs(y2 - y1) ? 'horizontal' : 'vertical';
+            }
+            if (dragDirectionPreference === 'horizontal') {
+                let stepX = x2 >= x1 ? 1 : -1;
+                for (let x = x1; x !== x2 + stepX; x += stepX) {
+                    path.push({ x: x, y: y1 });
+                }
+                let stepY = y2 >= y1 ? 1 : -1;
+                for (let y = y1 + stepY; y !== y2 + stepY; y += stepY) {
+                    path.push({ x: x2, y: y });
+                }
+            } else {
+                let stepY = y2 >= y1 ? 1 : -1;
+                for (let y = y1; y !== y2 + stepY; y += stepY) {
+                    path.push({ x: x1, y: y });
+                }
+                let stepX = x2 >= x1 ? 1 : -1;
+                for (let x = x1 + stepX; x !== x2 + stepX; x += stepX) {
+                    path.push({ x: x, y: y2 });
+                }
+            }
+            return path;
+        }
+
+        function pickShape(dirs) {
+            let bestIdx = 0, bestScore = 999;
+            for (let si = 0; si < LOGISTICS_SHAPES.length; si++) {
+                let sd = LOGISTICS_SHAPES[si].dirs;
+                let coversAll = dirs.every(d => sd.some(sd2 => sd2.x === d.x && sd2.y === d.y));
+                if (coversAll) {
+                    let extraDirs = sd.length - dirs.length;
+                    if (extraDirs < bestScore) { bestScore = extraDirs; bestIdx = si; }
+                }
+            }
+            return bestIdx;
+        }
+
+        function computePipeShapesForPath(path, network) {
+            let shapes = [];
+            for (let i = 0; i < path.length; i++) {
+                let p = path[i];
+                let idx = p.y * WORLD_SIZE + p.x;
+                let neededDirs = [];
+
+                if (i > 0) {
+                    let prev = path[i - 1];
+                    neededDirs.push({ x: prev.x - p.x, y: prev.y - p.y });
+                }
+                if (i < path.length - 1) {
+                    let next = path[i + 1];
+                    neededDirs.push({ x: next.x - p.x, y: next.y - p.y });
+                }
+                if (neededDirs.length === 0) {
+                    neededDirs = [{ x: -1, y: 0 }, { x: 1, y: 0 }];
+                }
+                if (neededDirs.length === 1) {
+                    let d = neededDirs[0];
+                    if (d.x === 0) neededDirs.push({ x: 0, y: -d.y });
+                    else neededDirs.push({ x: -d.x, y: 0 });
+                }
+
+                let existingVal = mapPipes[network][idx];
+                if (existingVal > 0) {
+                    let existingDirs = LOGISTICS_SHAPES[existingVal - 1].dirs;
+                    for (let ed of existingDirs) {
+                        if (!neededDirs.some(nd => nd.x === ed.x && nd.y === ed.y)) {
+                            neededDirs.push(ed);
+                        }
+                    }
+                }
+
+                let neighbors = [{ x: 0, y: -1 }, { x: 0, y: 1 }, { x: -1, y: 0 }, { x: 1, y: 0 }];
+                for (let n of neighbors) {
+                    let nx = p.x + n.x;
+                    let ny = p.y + n.y;
+                    if (nx >= 0 && nx < WORLD_SIZE && ny >= 0 && ny < WORLD_SIZE) {
+                        let nVal = mapPipes[network][ny * WORLD_SIZE + nx];
+                        if (nVal > 0) {
+                            let nDirs = LOGISTICS_SHAPES[nVal - 1].dirs;
+                            let pointsToMe = nDirs.some(nd => nd.x === -n.x && nd.y === -n.y);
+                            if (pointsToMe) {
+                                if (!neededDirs.some(nd => nd.x === n.x && nd.y === n.y)) {
+                                    neededDirs.push(n);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let sId = pickShape(neededDirs);
+                shapes.push(sId);
+            }
+            return shapes;
+        }
+
+        function findAStarPipePath(sx, sy, tx, ty) {
+            let openList = [{ x: sx, y: sy, g: 0, f: 0, parent: null }];
+            let closedSet = new Set();
+            let limit = 5000;
+            let h = (x1, y1, x2, y2) => Math.abs(x1 - x2) + Math.abs(y1 - y2);
+            let endIdx = ty * WORLD_SIZE + tx;
+
+            while (openList.length > 0 && limit-- > 0) {
+                openList.sort((a, b) => a.f - b.f);
+                let current = openList.shift();
+
+                if (current.x === tx && current.y === ty) {
+                    let path = [];
+                    let curr = current;
+                    while (curr !== null) {
+                        path.push({ x: curr.x, y: curr.y });
+                        curr = curr.parent;
+                    }
+                    return path.reverse();
+                }
+
+                closedSet.add(`${current.x},${current.y}`);
+
+                let neighbors = [
+                    { x: current.x, y: current.y - 1 }, { x: current.x, y: current.y + 1 },
+                    { x: current.x - 1, y: current.y }, { x: current.x + 1, y: current.y }
+                ];
+
+                for (let n of neighbors) {
+                    if (n.x < 0 || n.x >= WORLD_SIZE || n.y < 0 || n.y >= WORLD_SIZE) continue;
+                    if (closedSet.has(`${n.x},${n.y}`)) continue;
+
+                    let nIdx = n.y * WORLD_SIZE + n.x;
+                    if (nIdx !== endIdx) {
+                        let tileVal = worldMap[nIdx];
+                        if (tileVal >= 50000) continue;
+                    }
+
+                    let gCost = current.g + 1;
+                    let existingNode = openList.find(node => node.x === n.x && node.y === n.y);
+
+                    if (!existingNode || gCost < existingNode.g) {
+                        if (!existingNode) {
+                            openList.push({ x: n.x, y: n.y, g: gCost, f: gCost + h(n.x, n.y, tx, ty), parent: current });
+                        } else {
+                            existingNode.g = gCost;
+                            existingNode.f = gCost + h(n.x, n.y, tx, ty);
+                            existingNode.parent = current;
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+        function placeMachineAt(px, py) {
+            if (creativeMode || inventory[placingItem.id] > 0) {
+                let mDef = MACHINE_DEFS[placingItem.id]; let rDef = mDef.rotations[placingItem.rot % mDef.rotations.length]; let w = rDef.w, h = rDef.h; let valid = true, u = new Uint16Array(w * h), oreT = null, oreC = 0;
+                for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+                    let tx = px + x, ty = py + y;
+                    if (tx < 0 || tx >= WORLD_SIZE || ty < 0 || ty >= WORLD_SIZE) { valid = false; continue; }
+                    let tId = worldMap[ty * WORLD_SIZE + tx];
+                    u[y * w + x] = tId;
+                    if (tId >= 50000) { valid = false; continue; }
+
+                    if (placementQueue.some(q => q.type === 'machine' && tx >= q.px && tx < q.px + q.rDef.w && ty >= q.py && ty < q.py + q.rDef.h)) {
+                        valid = false; continue;
+                    }
+
+                    let char = rDef.art[y][x];
+                    let isPump = mDef.id === 'machine_brass_pump' || mDef.id === 'machine_coal_pump';
+                    let isJack = mDef.id === 'machine_pumpjack';
+                    let isWater = (tId === 32), isOil = (tId === 42);
+
+                    if (isJack) { if (char === 'P' && !isOil) valid = false; if (char !== 'P' && isWater) valid = false; }
+                    else if (isPump) { if (!isWater) valid = false; }
+                    else { if (isWater || isOil) valid = false; }
+                }
+                if (mDef.id === 'machine_miner') {
+                    let hC = []; if (placingItem.rot % 4 === 0) hC = [{ x: 0, y: 0 }, { x: 1, y: 0 }]; if (placingItem.rot % 4 === 1) hC = [{ x: 1, y: 0 }, { x: 1, y: 1 }]; if (placingItem.rot % 4 === 2) hC = [{ x: 0, y: 1 }, { x: 1, y: 1 }]; if (placingItem.rot % 4 === 3) hC = [{ x: 0, y: 0 }, { x: 0, y: 1 }];
+                    for (let c of hC) {
+                        let tX = px + c.x, tY = py + c.y;
+                        if (tX >= 0 && tX < WORLD_SIZE && tY >= 0 && tY < WORLD_SIZE) {
+                            let tId = worldMap[tY * WORLD_SIZE + tX];
+                            if ((tId >= 6 && tId <= 8) || (tId >= 10 && tId <= 31) || (tId >= 33 && tId <= 41)) { oreC++; oreT = getItemFromTileId(tId); }
+                        }
+                    } if (oreC === 0) valid = false;
+                }
+                if (mDef.id === 'machine_pumpjack') { oreC = 1; oreT = 'crude_oil'; }
+
+                if (valid) {
+                    if (!creativeMode) { inventory[placingItem.id]--; if (inventory[placingItem.id] <= 0) { delete inventory[placingItem.id]; isPlacingActive = false; placingItem.type = null; } }
+                    placementQueue.push({ type: 'machine', id: placingItem.id, px: px, py: py, rotIndex: placingItem.rot % mDef.rotations.length, mDef: mDef, rDef: rDef, u: u, oreType: oreT, oreCount: oreC });
+                    floatText(px, py, "Queued", "#ffb74d");
+                    updateHUD();
+                } else floatText(px, py, "Invalid Spot!", "#d32f2f");
+            }
+        }
+
+        function placeFloorAt(px, py) {
+            if (px < 0 || px >= WORLD_SIZE || py < 0 || py >= WORLD_SIZE) return;
+            let alreadyQueued = placementQueue.some(q => q.px === px && q.py === py && q.type === 'floor');
+            if (!alreadyQueued && (creativeMode || (inventory[placingItem.id] && inventory[placingItem.id] > 0))) {
+                if (worldMap[py * WORLD_SIZE + px] <= 1) {
+                    if (!creativeMode) { inventory[placingItem.id]--; if (inventory[placingItem.id] <= 0) { delete inventory[placingItem.id]; isPlacingActive = false; placingItem.type = null; } }
+                    placementQueue.push({ type: 'floor', id: placingItem.id, px: px, py: py });
+                    updateHUD();
+                }
+            }
+        }
+
+        function placeNaturalAt(px, py) {
+            if (px < 0 || px >= WORLD_SIZE || py < 0 || py >= WORLD_SIZE) return;
+            let idx = py * WORLD_SIZE + px;
+            if (worldMap[idx] < 50000) {
+                worldMap[idx] = placingItem.id;
+                if (gameState.rebuild_monster_paths) gameState.rebuild_monster_paths(player.x, player.y);
+                if (ws && ws.readyState === 1 && !window.isRemoteAction) {
+                    ws.send(JSON.stringify({ type: 'place_natural', x: px, y: py, id: placingItem.id }));
+                }
+            }
+        }
+
+        function pickupTile(px, py) {
+            if (px < 0 || px >= WORLD_SIZE || py < 0 || py >= WORLD_SIZE) return;
+
+            let tId = worldMap[py * WORLD_SIZE + px];
+            if (tId >= 50000) {
+                let mId = tId - 50000; let m = activeMachines[mId];
+                if (m && m.type !== 'machine_hub') {
+                    if (m.type === 'machine_q_router') {
+                        if (m.partnerId !== null && m.partnerId !== undefined) {
+                            let partner = activeMachines[m.partnerId];
+                            if (partner) {
+                                partner.decoherent = true;
+                                partner.partnerId = null;
+                                floatText(partner.x + 1, partner.y, "DECOHERENCE!", "#b388ff");
+                            }
+                            for (let am of activeMachines) {
+                                if (!am || am === m || am.type !== 'machine_q_router') continue;
+                                if (am.partnerId === null || am.partnerId === undefined) continue;
+                                if (Math.abs(am.x - m.x) > 20 || Math.abs(am.y - m.y) > 20) continue;
+
+                                let amPartner = activeMachines[am.partnerId];
+                                if (amPartner) {
+                                    amPartner.decoherent = true;
+                                    amPartner.partnerId = null;
+                                    floatText(amPartner.x + 1, amPartner.y, "CASCADE!", "#ce93d8");
+                                }
+                                am.decoherent = true;
+                                am.partnerId = null;
+                                floatText(am.x + 1, am.y, "CASCADE!", "#ce93d8");
+                            }
+                        }
+                    }
+
+                    if (m.type === 'machine_qe_forge' && m.outBuffer) {
+                        delete m.outBuffer['entangled_pair'];
+                        delete m.outBuffer['quantum_circuit'];
+                    }
+
+                    inventory[m.type] = (inventory[m.type] || 0) + 1;
+                    for (let itm in m.inv) { inventory[itm] = (inventory[itm] || 0) + m.inv[itm]; }
+                    for (let itm in m.outBuffer) { inventory[itm] = (inventory[itm] || 0) + m.outBuffer[itm]; }
+                    if (m.out2Buffer) { for (let itm in m.out2Buffer) { inventory[itm] = (inventory[itm] || 0) + m.out2Buffer[itm]; } }
+
+                    let r = m.def.rotations[m.rotIndex];
+                    for (let y = 0; y < r.h; y++) for (let x = 0; x < r.w; x++) worldMap[(m.y + y) * WORLD_SIZE + (m.x + x)] = m.underlying[y * r.w + x];
+                    activeMachines[mId] = null; floatText(px, py, "Picked up " + m.type, "#fff");
+                    updateHepaNetwork(); powerGridNeedsUpdate = true; dataGridNeedsUpdate = true;
+                    if (ws && ws.readyState === 1 && !window.isRemoteAction) ws.send(JSON.stringify({ type: 'mine_block', x: px, y: py, layer: 'machine' }));
+                }
+            } else {
+                let pickedPipe = false;
+                for (let net of NETWORKS) {
+                    if (mapPipes[net][py * WORLD_SIZE + px] > 0) {
+                        mapPipes[net][py * WORLD_SIZE + px] = 0;
+                        let itm = LOGISTICS_ITEMS.find(i => i.net === net).id; inventory[itm] = (inventory[itm] || 0) + 1;
+                        floatText(px, py, "Picked up " + itm, LOGISTICS_COLORS[net]);
+                        activeRoutes = activeRoutes.filter(r => r.network !== net || !r.path.some(pt => pt.x === px && pt.y === py));
+                        updateRouteMap();
+                        pickedPipe = true;
+                    }
+                }
+                if (pickedPipe) {
+                    let anyLeft = 0; for (let n of NETWORKS) { if (mapPipes[n][py * WORLD_SIZE + px] > 0) { anyLeft = 1; break; } }
+                    hasPipeMap[py * WORLD_SIZE + px] = anyLeft; powerGridNeedsUpdate = true; dataGridNeedsUpdate = true;
+                    if (ws && ws.readyState === 1 && !window.isRemoteAction) ws.send(JSON.stringify({ type: 'mine_block', x: px, y: py, layer: 'pipe' }));
+                } else {
+                    let packed = gameState.pickup_belt_item(px, py);
+                    if (packed !== 4294967295) {
+                        let amt = packed >>> 16;
+                        let id = packed & 0xFFFF;
+                        let itemIdStr = ID_TO_ITEM[id];
+                        inventory[itemIdStr] = (inventory[itemIdStr] || 0) + amt;
+                        floatText(px, py, `+${amt} ` + itemIdStr, "#fff");
+                    }
+                }
+            }
+            if (inventoryVisible) updateInventoryUI();
+        }
+
+        function handleRoutingClick(px, py) {
+            let isDrone = routingNetwork.startsWith('drone_');
+            let isSignal = routingNetwork === 'defense_signal';
+            let tileId = worldMap[py * WORLD_SIZE + px];
+            let hoveredMachine = tileId >= 50000 ? activeMachines[tileId - 50000] : null;
+
+            if (isDrone || isSignal) {
+                if (routingMode === 'start') {
+                    if (isSignal) {
+                        if (hoveredMachine && hoveredMachine.type === 'machine_defense_node') {
+                            routeStartPos = { x: px, y: py, mId: hoveredMachine.id }; routingMode = 'end'; floatText(px, py, "Node Set", "#03a9f4"); updateRoutingUI();
+                        } else floatText(px, py, "Must be on Signal Node!", "#d32f2f");
+                    } else if (hoveredMachine && ((routingNetwork === 'drone_farm' && hoveredMachine.type === 'machine_drone_station_farming') || (routingNetwork === 'drone_carry' && (hoveredMachine.type === 'machine_drone_station_carrier' || hoveredMachine.type === 'machine_advanced_drone_station')))) {
+                        routeStartPos = { x: px, y: py, mId: hoveredMachine.id }; routingMode = 'end'; floatText(px, py, "Station Set", "#03a9f4"); updateRoutingUI();
+                    } else floatText(px, py, "Must be on Drone Station!", "#d32f2f");
+                } else if (routingMode === 'end') {
+                    if (isSignal) {
+                        if (hoveredMachine && hoveredMachine.type === 'machine_defense_radar') {
+                            let m = activeMachines[routeStartPos.mId];
+                            m.linkOutput = { x: px, y: py };
+                            floatText(px, py, "Linked to Radar!", "#4caf50"); routingMode = 'none'; updateRoutingUI();
+                            dataGridNeedsUpdate = true;
+                        } else floatText(px, py, "Must be on Defense Radar!", "#d32f2f");
+                    } else if (routingNetwork === 'drone_farm') {
+                        routeStartPos.midX = px; routeStartPos.midY = py; routingMode = 'end2'; floatText(px, py, "Corner 1 Set", "#03a9f4"); updateRoutingUI();
+                    } else {
+                        if (hoveredMachine && hoveredMachine.type === 'machine_drone_input') {
+                            routeStartPos.midX = px; routeStartPos.midY = py; routingMode = 'end2'; floatText(px, py, "Input Set", "#03a9f4"); updateRoutingUI();
+                        } else floatText(px, py, "Must be on Drone Input!", "#d32f2f");
+                    }
+                } else if (routingMode === 'end2') {
+                    let m = activeMachines[routeStartPos.mId];
+                    if (routingNetwork === 'drone_farm') {
+                        m.area = { x1: Math.min(routeStartPos.midX, px), y1: Math.min(routeStartPos.midY, py), x2: Math.max(routeStartPos.midX, px), y2: Math.max(routeStartPos.midY, py) };
+                        floatText(px, py, "Farming Area Set!", "#4caf50"); routingMode = 'none'; updateRoutingUI();
+                    } else {
+                        if (hoveredMachine && hoveredMachine.type === 'machine_drone_output') {
+                            m.linkInput = { x: routeStartPos.midX, y: routeStartPos.midY }; m.linkOutput = { x: px, y: py };
+                            floatText(px, py, "Carrier Route Set!", "#4caf50"); routingMode = 'none'; updateRoutingUI();
+                        } else floatText(px, py, "Must be on Drone Output!", "#d32f2f");
+                    }
+                }
+            } else {
+                if (mapPipes[routingNetwork][py * WORLD_SIZE + px] > 0) {
+                    if (routingMode === 'start') { routeStartPos = { x: px, y: py }; routingMode = 'end'; floatText(px, py, "Start Set", "#03a9f4"); updateRoutingUI(); }
+                    else if (routingMode === 'end') {
+                        let path = findPipePath(routeStartPos.x, routeStartPos.y, px, py, routingNetwork);
+                        if (path) { activeRoutes.push({ network: routingNetwork, path: path }); updateRouteMap(); floatText(px, py, "Route Created!", "#4caf50"); } else floatText(px, py, "No Connection!", "#d32f2f");
+                        routingMode = 'none'; updateRoutingUI();
+                    }
+                } else floatText(px, py, "Must be on matching pipe!", "#d32f2f");
+            }
+        }
+
+        function commitDragPipePath() {
+            if (!dragStartTile) return;
+            let path = getDragPipePathCoords(dragStartTile.x, dragStartTile.y, mouseTileX, mouseTileY);
+            let network = placingItem.network;
+            let itemId = placingItem.id;
+
+            let shapes = computePipeShapesForPath(path, network);
+            let placedCount = 0;
+
+            for (let i = 0; i < path.length; i++) {
+                let p = path[i];
+                let sId = shapes[i];
+
+                let tileVal = worldMap[p.y * WORLD_SIZE + p.x];
+                if (tileVal >= 50000) continue;
+
+                let alreadyQueued = placementQueue.some(q => q.px === p.x && q.py === p.y && q.network === network);
+                if (alreadyQueued) continue;
+
+                if (!creativeMode && (inventory[itemId] || 0) <= 0) {
+                    floatText(p.x, p.y, "Out of Items!", "#d32f2f");
+                    break;
+                }
+
+                if (!creativeMode) {
+                    inventory[itemId]--;
+                    if (inventory[itemId] <= 0) delete inventory[itemId];
+                }
+
+                placementQueue.push({
+                    type: 'logistics',
+                    id: itemId,
+                    network: network,
+                    px: p.x,
+                    py: p.y,
+                    sId: sId
+                });
+                placedCount++;
+            }
+
+            if (placedCount > 0) {
+                floatText(mouseTileX, mouseTileY, `Queued ${placedCount} segments!`, LOGISTICS_COLORS[network]);
+                updateHUD();
+            }
+        }
+
         const NATURAL_BLOCKS = [
             { id: 3, name: "Tree Log", cat: "Flora", color: "#5d4037" },
             { id: 2, name: "Tree Leaves", cat: "Flora", color: "#2e7d32" },
@@ -1809,7 +2220,57 @@
                     }
                     return;
                 }
-                if (e.key === "Enter" && placementQueue.length > 0) { confirmPlacements(); return; }
+                if (e.key === "Enter") {
+                    if (e.shiftKey) {
+                        if (isPlacingActive && placingItem.type === 'logistics' && placingItem.network !== 'floor' && dragStartTile) {
+                            let path = findAStarPipePath(dragStartTile.x, dragStartTile.y, mouseTileX, mouseTileY);
+                            if (path) {
+                                let network = placingItem.network;
+                                let itemId = placingItem.id;
+                                let shapes = computePipeShapesForPath(path, network);
+                                let placedCount = 0;
+                                for (let i = 0; i < path.length; i++) {
+                                    let p = path[i];
+                                    let sId = shapes[i];
+                                    let tileVal = worldMap[p.y * WORLD_SIZE + p.x];
+                                    if (tileVal >= 50000) continue;
+                                    let alreadyQueued = placementQueue.some(q => q.px === p.x && q.py === p.y && q.network === network);
+                                    if (alreadyQueued) continue;
+                                    if (!creativeMode && (inventory[itemId] || 0) <= 0) {
+                                        floatText(p.x, p.y, "Out of Items!", "#d32f2f");
+                                        break;
+                                    }
+                                    if (!creativeMode) {
+                                        inventory[itemId]--;
+                                        if (inventory[itemId] <= 0) delete inventory[itemId];
+                                    }
+                                    placementQueue.push({
+                                        type: 'logistics',
+                                        id: itemId,
+                                        network: network,
+                                        px: p.x,
+                                        py: p.y,
+                                        sId: sId
+                                    });
+                                    placedCount++;
+                                }
+                                if (placedCount > 0) {
+                                    floatText(mouseTileX, mouseTileY, `Auto-Routed ${placedCount} segments!`, LOGISTICS_COLORS[network]);
+                                    updateHUD();
+                                }
+                                isDragging = false;
+                                dragStartTile = null;
+                                dragDirectionPreference = null;
+                            } else {
+                                floatText(mouseTileX, mouseTileY, "No path found for Auto-Route!", "#d32f2f");
+                            }
+                            return;
+                        }
+                    } else if (placementQueue.length > 0) {
+                        confirmPlacements();
+                        return;
+                    }
+                }
                 if (e.shiftKey && k === 'o') {
                     if (ws && !isHost) {
                         // Guest asks host to save their inventory
@@ -1914,19 +2375,80 @@
                 if (k === 'f') stopMining();
             });
 
+            window.addEventListener("mousemove", (e) => {
+                let rect = canvas.getBoundingClientRect();
+                mouseX = e.clientX - rect.left;
+                mouseY = e.clientY - rect.top;
+                
+                mouseTileX = Math.floor(player.x + (mouseX - canvas.width / 2) / charWidth);
+                mouseTileY = Math.floor(player.y + (mouseY - canvas.height / 2) / charHeight);
+
+                if (isDragging && isPlacingActive) {
+                    if (placingItem.type === 'tool' && placingItem.id === 'pickup') {
+                        pickupTile(mouseTileX, mouseTileY);
+                    } else if (placingItem.type === 'floor') {
+                        placeFloorAt(mouseTileX, mouseTileY);
+                    } else if (placingItem.type === 'natural') {
+                        placeNaturalAt(mouseTileX, mouseTileY);
+                    }
+                }
+            });
+
             canvas.addEventListener("mousedown", (e) => {
-                if (!window.isAgentMode || !window.agent) return;
+                let rect = canvas.getBoundingClientRect();
+                mouseX = e.clientX - rect.left;
+                mouseY = e.clientY - rect.top;
+                mouseTileX = Math.floor(player.x + (mouseX - canvas.width / 2) / charWidth);
+                mouseTileY = Math.floor(player.y + (mouseY - canvas.height / 2) / charHeight);
+
+                if (e.button === 2) {
+                    // Right click opens machine UI
+                    handleRightClick(mouseTileX, mouseTileY);
+                    return;
+                }
                 if (e.button !== 0) return; // Left click only
 
-                let rect = canvas.getBoundingClientRect();
-                let clickX = e.clientX - rect.left;
-                let clickY = e.clientY - rect.top;
+                if (isPlacingActive && placingItem.type) {
+                    if (placingItem.type === 'machine') {
+                        placeMachineAt(mouseTileX, mouseTileY);
+                    } else if (placingItem.type === 'natural') {
+                        isDragging = true;
+                        placeNaturalAt(mouseTileX, mouseTileY);
+                    } else if (placingItem.type === 'floor') {
+                        isDragging = true;
+                        placeFloorAt(mouseTileX, mouseTileY);
+                    } else if (placingItem.type === 'logistics' && placingItem.network !== 'floor') {
+                        isDragging = true;
+                        dragStartTile = { x: mouseTileX, y: mouseTileY };
+                        dragDirectionPreference = null;
+                    } else if (placingItem.type === 'tool' && placingItem.id === 'pickup') {
+                        isDragging = true;
+                        pickupTile(mouseTileX, mouseTileY);
+                    }
+                } else if (routingMode !== 'none') {
+                    handleRoutingClick(mouseTileX, mouseTileY);
+                } else if (window.isAgentMode && window.agent) {
+                    window.agent.moveTo(mouseTileX, mouseTileY);
+                    if (typeof floatText === 'function') floatText(mouseTileX, mouseTileY, "X", "#ff0000");
+                }
+            });
 
-                let tileX = Math.floor(Math.floor(player.x) + (clickX - canvas.width / 2) / charWidth);
-                let tileY = Math.floor(Math.floor(player.y) + (clickY - canvas.height / 2) / charHeight);
+            window.addEventListener("contextmenu", (e) => {
+                e.preventDefault();
+            });
 
-                window.agent.moveTo(tileX, tileY);
-                if (typeof floatText === 'function') floatText(tileX, tileY, "X", "#ff0000");
+            window.addEventListener("mouseup", (e) => {
+                if (e.button !== 0) return; // Left click only
+                if (isDragging) {
+                    if (isPlacingActive) {
+                        if (placingItem.type === 'logistics' && placingItem.network !== 'floor') {
+                            commitDragPipePath();
+                        }
+                    }
+                    isDragging = false;
+                    dragStartTile = null;
+                    dragDirectionPreference = null;
+                }
             });
 
             window.craftItem = craftItem; window.transferItem = transferItem;
@@ -2308,16 +2830,22 @@
                 }
             }
         }
+        function handleRightClick(mx, my) {
+            if (mx < 0 || mx >= WORLD_SIZE || my < 0 || my >= WORLD_SIZE) return;
+            let tId = worldMap[my * WORLD_SIZE + mx];
+            if (tId >= 50000) {
+                let clickedMachine = activeMachines[tId - 50000];
+                if (clickedMachine) {
+                    if (clickedMachine.type === 'machine_grid_crafting_interface') toggleGridTerminalUI(clickedMachine);
+                    else if (clickedMachine.type === 'machine_cdh') toggleCdhUI(clickedMachine);
+                    else if (clickedMachine.type === 'machine_cdh_plc') togglePlcUI(clickedMachine);
+                    else if (clickedMachine.type === 'machine_crafter') { currentCraftingEnv = 'table'; toggleCrafting(); }
+                    else toggleMachineUI(clickedMachine);
+                }
+            }
+        }
         function handleEKeyPress() {
-            let nearM = null; const px = Math.floor(player.x), py = Math.floor(player.y);
-            for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) { let id = worldMap[(py + y) * WORLD_SIZE + (px + x)]; if (id >= 50000) { nearM = activeMachines[id - 50000]; break; } }
-            if (nearM) {
-                if (nearM.type === 'machine_grid_crafting_interface') toggleGridTerminalUI(nearM);
-                else if (nearM.type === 'machine_cdh') toggleCdhUI(nearM);
-                else if (nearM.type === 'machine_cdh_plc') togglePlcUI(nearM);
-                else if (nearM.type === 'machine_crafter') { currentCraftingEnv = 'table'; toggleCrafting(); }
-                else toggleMachineUI(nearM);
-            } else toggleInventory();
+            toggleInventory();
         }
 
         function toggleGuide() { const v = !guideVisible; closeAllMenus(); guideVisible = v; document.getElementById('guide-ui').style.display = v ? 'block' : 'none'; }
@@ -4182,192 +4710,16 @@ let p = Math.floor(progressRatio * 100);
                 player.y = prevY;
             }
 
+            // Recalculate mouse grid coordinates based on updated player position nyan!
+            mouseTileX = Math.floor(player.x + (mouseX - canvas.width / 2) / charWidth);
+            mouseTileY = Math.floor(player.y + (mouseY - canvas.height / 2) / charHeight);
+
             if ((dx !== 0 || dy !== 0) && isMining) stopMining();
 
             let spaceJustPressed = keys.space && !spaceWasDown;
             const px = Math.floor(player.x), py = Math.floor(player.y);
 
-            let wasInside = worldMap[Math.floor(prevY) * WORLD_SIZE + Math.floor(prevX)] >= 50000;
-            let isInside = worldMap[Math.floor(player.y) * WORLD_SIZE + Math.floor(player.x)] >= 50000;
-            if (isPickupMode && keys.space) {
-                if (px !== lastPlacedPos.x || py !== lastPlacedPos.y) {
-                    lastPlacedPos = { x: px, y: py };
-
-                    // 1. Pickup Machines first
-                    let tId = worldMap[py * WORLD_SIZE + px];
-                    if (tId >= 50000) {
-                        let mId = tId - 50000; let m = activeMachines[mId];
-                        if (m && m.type !== 'machine_hub') {
-                            // FIX 3: Returning Inventory back to Player when machine is collected
-                            inventory[m.type] = (inventory[m.type] || 0) + 1;
-                            for (let itm in m.inv) { inventory[itm] = (inventory[itm] || 0) + m.inv[itm]; }
-                            for (let itm in m.outBuffer) { inventory[itm] = (inventory[itm] || 0) + m.outBuffer[itm]; }
-                            if (m.out2Buffer) { for (let itm in m.out2Buffer) { inventory[itm] = (inventory[itm] || 0) + m.out2Buffer[itm]; } }
-
-                            let r = m.def.rotations[m.rotIndex];
-                            for (let y = 0; y < r.h; y++) for (let x = 0; x < r.w; x++) worldMap[(m.y + y) * WORLD_SIZE + (m.x + x)] = m.underlying[y * r.w + x];
-                            activeMachines[mId] = null; floatText(px, py, "Picked up " + m.type, "#fff");
-                            updateHepaNetwork(); powerGridNeedsUpdate = true; dataGridNeedsUpdate = true;
-                            if (ws && ws.readyState === 1 && !window.isRemoteAction) ws.send(JSON.stringify({ type: 'mine_block', x: px, y: py, layer: 'machine' }));
-                        }
-                    } else {
-                        // 2. Pickup Pipes/Belts if no machine
-                        let pickedPipe = false;
-                        for (let net of NETWORKS) {
-                            if (mapPipes[net][py * WORLD_SIZE + px] > 0) {
-                                mapPipes[net][py * WORLD_SIZE + px] = 0;
-                                let itm = LOGISTICS_ITEMS.find(i => i.net === net).id; inventory[itm] = (inventory[itm] || 0) + 1;
-                                floatText(px, py, "Picked up " + itm, LOGISTICS_COLORS[net]);
-                                activeRoutes = activeRoutes.filter(r => r.network !== net || !r.path.some(pt => pt.x === px && pt.y === py));
-                                updateRouteMap();
-                                pickedPipe = true;
-                            }
-                        }
-                        if (pickedPipe) {
-                            let anyLeft = 0; for (let n of NETWORKS) { if (mapPipes[n][py * WORLD_SIZE + px] > 0) { anyLeft = 1; break; } }
-                            hasPipeMap[py * WORLD_SIZE + px] = anyLeft; powerGridNeedsUpdate = true; dataGridNeedsUpdate = true;
-                            if (ws && ws.readyState === 1 && !window.isRemoteAction) ws.send(JSON.stringify({ type: 'mine_block', x: px, y: py, layer: 'pipe' }));
-                        } else {
-                            // FIX 3: Properly retrieve memory references of floating items passing by inside WASM Space!
-                            let packed = gameState.pickup_belt_item(px, py);
-                            if (packed !== 4294967295) { // u32::MAX check
-                                let amt = packed >>> 16;
-                                let id = packed & 0xFFFF;
-                                let itemIdStr = ID_TO_ITEM[id];
-                                inventory[itemIdStr] = (inventory[itemIdStr] || 0) + amt;
-                                floatText(px, py, `+${amt} ` + itemIdStr, "#fff");
-                            }
-                        }
-                    }
-                }
-            }
-            if (routingMode !== 'none' && spaceJustPressed) {
-                let isDrone = routingNetwork.startsWith('drone_');
-                let isSignal = routingNetwork === 'defense_signal';
-                let tileId = worldMap[py * WORLD_SIZE + px];
-                let hoveredMachine = tileId >= 50000 ? activeMachines[tileId - 50000] : null;
-
-                if (isDrone || isSignal) {
-                    if (routingMode === 'start') {
-                        if (isSignal) {
-                            if (hoveredMachine && hoveredMachine.type === 'machine_defense_node') {
-                                routeStartPos = { x: px, y: py, mId: hoveredMachine.id }; routingMode = 'end'; floatText(px, py, "Node Set", "#03a9f4"); updateRoutingUI();
-                            } else floatText(px, py, "Must be on Signal Node!", "#d32f2f");
-                        } else if (hoveredMachine && ((routingNetwork === 'drone_farm' && hoveredMachine.type === 'machine_drone_station_farming') || (routingNetwork === 'drone_carry' && (hoveredMachine.type === 'machine_drone_station_carrier' || hoveredMachine.type === 'machine_advanced_drone_station')))) {
-                            routeStartPos = { x: px, y: py, mId: hoveredMachine.id }; routingMode = 'end'; floatText(px, py, "Station Set", "#03a9f4"); updateRoutingUI();
-                        } else floatText(px, py, "Must be on Drone Station!", "#d32f2f");
-                    } else if (routingMode === 'end') {
-                        if (isSignal) {
-                            if (hoveredMachine && hoveredMachine.type === 'machine_defense_radar') {
-                                let m = activeMachines[routeStartPos.mId];
-                                m.linkOutput = { x: px, y: py };
-                                floatText(px, py, "Linked to Radar!", "#4caf50"); routingMode = 'none'; updateRoutingUI();
-                                dataGridNeedsUpdate = true;
-                            } else floatText(px, py, "Must be on Defense Radar!", "#d32f2f");
-                        } else if (routingNetwork === 'drone_farm') {
-                            routeStartPos.midX = px; routeStartPos.midY = py; routingMode = 'end2'; floatText(px, py, "Corner 1 Set", "#03a9f4"); updateRoutingUI();
-                        } else {
-                            if (hoveredMachine && hoveredMachine.type === 'machine_drone_input') {
-                                routeStartPos.midX = px; routeStartPos.midY = py; routingMode = 'end2'; floatText(px, py, "Input Set", "#03a9f4"); updateRoutingUI();
-                            } else floatText(px, py, "Must be on Drone Input!", "#d32f2f");
-                        }
-                    } else if (routingMode === 'end2') {
-                        let m = activeMachines[routeStartPos.mId];
-                        if (routingNetwork === 'drone_farm') {
-                            m.area = { x1: Math.min(routeStartPos.midX, px), y1: Math.min(routeStartPos.midY, py), x2: Math.max(routeStartPos.midX, px), y2: Math.max(routeStartPos.midY, py) };
-                            floatText(px, py, "Farming Area Set!", "#4caf50"); routingMode = 'none'; updateRoutingUI();
-                        } else {
-                            if (hoveredMachine && hoveredMachine.type === 'machine_drone_output') {
-                                m.linkInput = { x: routeStartPos.midX, y: routeStartPos.midY }; m.linkOutput = { x: px, y: py };
-                                floatText(px, py, "Carrier Route Set!", "#4caf50"); routingMode = 'none'; updateRoutingUI();
-                            } else floatText(px, py, "Must be on Drone Output!", "#d32f2f");
-                        }
-                    }
-                } else {
-                    if (mapPipes[routingNetwork][py * WORLD_SIZE + px] > 0) {
-                        if (routingMode === 'start') { routeStartPos = { x: px, y: py }; routingMode = 'end'; floatText(px, py, "Start Set", "#03a9f4"); updateRoutingUI(); }
-                        else if (routingMode === 'end') {
-                            let path = findPipePath(routeStartPos.x, routeStartPos.y, px, py, routingNetwork);
-                            if (path) { activeRoutes.push({ network: routingNetwork, path: path }); updateRouteMap(); floatText(px, py, "Route Created!", "#4caf50"); } else floatText(px, py, "No Connection!", "#d32f2f");
-                            routingMode = 'none'; updateRoutingUI();
-                        }
-                    } else floatText(px, py, "Must be on matching pipe!", "#d32f2f");
-                }
-            }
-            else if (isPlacingActive && placingItem.type) {
-                if (placingItem.type === 'machine' && spaceJustPressed) {
-                    if (creativeMode || inventory[placingItem.id] > 0) {
-                        let mDef = MACHINE_DEFS[placingItem.id]; let rDef = mDef.rotations[placingItem.rot % mDef.rotations.length]; let w = rDef.w, h = rDef.h; let valid = true, u = new Uint16Array(w * h), oreT = null, oreC = 0;
-                        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-                            let tx = px + x, ty = py + y;
-                            let tId = worldMap[ty * WORLD_SIZE + tx];
-                            u[y * w + x] = tId;
-                            if (tId >= 50000) { valid = false; continue; } // machine overlap
-
-                            // Prevent overlapping Halos
-                            if (placementQueue.some(q => q.type === 'machine' && tx >= q.px && tx < q.px + q.rDef.w && ty >= q.py && ty < q.py + q.rDef.h)) {
-                                valid = false; continue;
-                            }
-
-                            let char = rDef.art[y][x];
-                            let isPump = mDef.id === 'machine_brass_pump' || mDef.id === 'machine_coal_pump';
-                            let isJack = mDef.id === 'machine_pumpjack';
-                            let isWater = (tId === 32), isOil = (tId === 42);
-
-                            if (isJack) { if (char === 'P' && !isOil) valid = false; if (char !== 'P' && isWater) valid = false; }
-                            else if (isPump) { if (!isWater) valid = false; }
-                            else { if (isWater || isOil) valid = false; }
-                        }
-                        if (mDef.id === 'machine_miner') {
-                            let hC = []; if (placingItem.rot % 4 === 0) hC = [{ x: 0, y: 0 }, { x: 1, y: 0 }]; if (placingItem.rot % 4 === 1) hC = [{ x: 1, y: 0 }, { x: 1, y: 1 }]; if (placingItem.rot % 4 === 2) hC = [{ x: 0, y: 1 }, { x: 1, y: 1 }]; if (placingItem.rot % 4 === 3) hC = [{ x: 0, y: 0 }, { x: 0, y: 1 }];
-                            for (let c of hC) {
-                                let tId = worldMap[(py + c.y) * WORLD_SIZE + (px + c.x)];
-                                if ((tId >= 6 && tId <= 8) || (tId >= 10 && tId <= 31) || (tId >= 33 && tId <= 41)) { oreC++; oreT = getItemFromTileId(tId); }
-                            } if (oreC === 0) valid = false;
-                        }
-                        if (mDef.id === 'machine_pumpjack') { oreC = 1; oreT = 'crude_oil'; }
-
-                        if (valid) {
-                            if (!creativeMode) { inventory[placingItem.id]--; if (inventory[placingItem.id] <= 0) { delete inventory[placingItem.id]; isPlacingActive = false; placingItem.type = null; } }
-                            placementQueue.push({ type: 'machine', id: placingItem.id, px: px, py: py, rotIndex: placingItem.rot % mDef.rotations.length, mDef: mDef, rDef: rDef, u: u, oreType: oreT, oreCount: oreC });
-                            floatText(px, py, "Queued", "#ffb74d");
-                            updateHUD();
-                        } else floatText(px, py, "Invalid Spot!", "#d32f2f");
-                    }
-                } else if (placingItem.type === 'logistics' && keys.space) {
-                    if (px !== lastPlacedPos.x || py !== lastPlacedPos.y) {
-                        if (creativeMode || (inventory[placingItem.id] && inventory[placingItem.id] > 0)) {
-                            let alreadyQueued = placementQueue.some(q => q.px === px && q.py === py && (q.network === placingItem.network || q.type === 'floor'));
-                            if (!alreadyQueued) {
-                                if (placingItem.network === 'floor') {
-                                    if (worldMap[py * WORLD_SIZE + px] <= 1) {
-                                        if (!creativeMode) { inventory[placingItem.id]--; if (inventory[placingItem.id] <= 0) { delete inventory[placingItem.id]; isPlacingActive = false; placingItem.type = null; } }
-                                        placementQueue.push({ type: 'floor', id: placingItem.id, px: px, py: py });
-                                        lastPlacedPos = { x: px, y: py }; updateHUD();
-                                    }
-                                } else {
-                                    let shapeGrp = SHAPE_ORDER[placingItem.shapeIdx]; let sId = SHAPE_GROUPS[shapeGrp][placingItem.rot % SHAPE_GROUPS[shapeGrp].length];
-                                    if (!creativeMode) { inventory[placingItem.id]--; if (inventory[placingItem.id] <= 0) { delete inventory[placingItem.id]; isPlacingActive = false; placingItem.type = null; } }
-                                    placementQueue.push({ type: 'logistics', id: placingItem.id, network: placingItem.network, px: px, py: py, sId: sId });
-                                    lastPlacedPos = { x: px, y: py }; updateHUD();
-                                }
-                            }
-                        } else { floatText(px, py, "No Items", "#d32f2f"); lastPlacedPos = { x: px, y: py }; }
-                    }
-                } else if (placingItem.type === 'natural' && keys.space) {
-                    if (px !== lastPlacedPos.x || py !== lastPlacedPos.y) {
-                        let idx = py * WORLD_SIZE + px;
-                        if (worldMap[idx] < 50000) {
-                            worldMap[idx] = placingItem.id;
-                            lastPlacedPos = { x: px, y: py };
-                            if (gameState.rebuild_monster_paths) gameState.rebuild_monster_paths(player.x, player.y);
-                            if (ws && ws.readyState === 1 && !window.isRemoteAction) {
-                                ws.send(JSON.stringify({ type: 'place_natural', x: px, y: py, id: placingItem.id }));
-                            }
-                        }
-                    }
-                }
-            }
+            // Mouse-centric systems nyan! >w< (building, pickup, and routing are now handled by mouse event listeners instead of the player spacebar!)
 
             if (!keys.space) lastPlacedPos = { x: -1, y: -1 };
             if (isMining) { if (Math.floor(player.x) !== miningTarget.x || Math.floor(player.y) !== miningTarget.y) stopMining(); else { miningTarget.progress += dt * 60; if (miningTarget.progress >= miningTarget.requiredProgress) mineComplete(); } }
@@ -4394,19 +4746,43 @@ let p = Math.floor(progressRatio * 100);
                     let nm = activeMachines[mId];
 
                     if (nm) {
-                        let maxCap = (nm.def.maxStack || 100) - (nm.inv[itemIdStr] || 0);
-                        let toInsert = Math.min(amount, Math.max(0, maxCap));
-                        if (toInsert > 0 && (!nm.def.acceptsItem || nm.def.acceptsItem(nm, itemIdStr))) {
-    nm.inv[itemIdStr] = (nm.inv[itemIdStr] || 0) + toInsert;
-    nm._hasIngredients = true; // Flag standard machine as supplied
-    floatText(mx, my, `In: ${toInsert}x ` + itemIdStr, ITEM_COLORS[itemIdStr] || '#fff');
-                            if (toInsert >= amount) {
-                                gameState.remove_belt_item_at(routeId, routeIdx); // fully consumed
-                            } else {
-                                gameState.set_belt_item_amount(routeId, routeIdx, amount - toInsert); // partial: shrink stack
+                        if (nm._isStandardWasm) {
+                            // WASM machine: inventory lives in Rust, must use insert_machine_item nyan!
+                            // Query Rust for the current amount of this item to enforce maxStack cap.
+                            const maxStack = nm.def.maxStack || 100;
+                            let currentAmt = 0;
+                            const invFlat = gameState.get_machine_inv_flat(mId);
+                            const itemNumId = ITEM_TO_ID[itemIdStr];
+                            for (let j = 0; j < invFlat.length; j += 2) {
+                                if (invFlat[j] === itemNumId) { currentAmt = invFlat[j + 1]; break; }
                             }
+                            const toInsert = Math.min(amount, Math.max(0, maxStack - currentAmt));
+                            if (toInsert > 0) {
+                                gameState.insert_machine_item(mId, itemNumId, toInsert);
+                                floatText(mx, my, `In: ${toInsert}x ` + itemIdStr, ITEM_COLORS[itemIdStr] || '#fff');
+                                if (toInsert >= amount) {
+                                    gameState.remove_belt_item_at(routeId, routeIdx);
+                                } else {
+                                    gameState.set_belt_item_amount(routeId, routeIdx, amount - toInsert); // partial: machine full
+                                }
+                            }
+                            // If toInsert == 0: WASM machine full - item stays on belt, backs up the queue
+                        } else {
+                            // JS machine: insert into the JS-side nm.inv as normal
+                            let maxCap = (nm.def.maxStack || 100) - (nm.inv[itemIdStr] || 0);
+                            let toInsert = Math.min(amount, Math.max(0, maxCap));
+                            if (toInsert > 0 && (!nm.def.acceptsItem || nm.def.acceptsItem(nm, itemIdStr))) {
+                                nm.inv[itemIdStr] = (nm.inv[itemIdStr] || 0) + toInsert;
+                                nm._hasIngredients = true; // Flag standard machine as supplied
+                                floatText(mx, my, `In: ${toInsert}x ` + itemIdStr, ITEM_COLORS[itemIdStr] || '#fff');
+                                if (toInsert >= amount) {
+                                    gameState.remove_belt_item_at(routeId, routeIdx); // fully consumed
+                                } else {
+                                    gameState.set_belt_item_amount(routeId, routeIdx, amount - toInsert); // partial: shrink stack
+                                }
+                            }
+                            // If toInsert == 0: machine full - item stays on belt naturally, blocks queue behind it
                         }
-                        // If toInsert == 0: machine full — item stays on belt naturally, blocks queue behind it
                     }
                 }
             }
@@ -4533,9 +4909,17 @@ let p = Math.floor(progressRatio * 100);
                                     floatText(ox, oy, "In: " + outItem, ITEM_COLORS[outItem] || '#fff');
                                 }
                             } else if (nm && nm._isStandardWasm) {
-                                gameState.insert_machine_item(nId - 50000, ITEM_TO_ID[outItem], 1);
-                                buffer[outItem]--; totalPushed++;
-                                floatText(ox, oy, "In: " + outItem, ITEM_COLORS[outItem] || '#fff');
+                                // Check maxStack against Rust inventory before inserting
+                                const ms = nm.def.maxStack || 100;
+                                const iid = ITEM_TO_ID[outItem];
+                                let curAmt = 0;
+                                const iFlat = gameState.get_machine_inv_flat(nId - 50000);
+                                for (let j = 0; j < iFlat.length; j += 2) { if (iFlat[j] === iid) { curAmt = iFlat[j+1]; break; } }
+                                if (curAmt < ms) {
+                                    gameState.insert_machine_item(nId - 50000, iid, 1);
+                                    buffer[outItem]--; totalPushed++;
+                                    floatText(ox, oy, "In: " + outItem, ITEM_COLORS[outItem] || '#fff');
+                                }
                             }
                         }
                     }
@@ -4845,6 +5229,13 @@ if (m.disabledByPLC) {
                 pushQuad('@', pSX, pSY, player.color, 1.0); // Now uses random color
             }
 
+            // Premium Translucent Blue Grid Highlight Box for hovered tile nyan! (>w<)
+            if (routingMode !== 'none' || isPlacingActive || _isPickupMode) {
+                let mSX = (mouseTileX - player.x) * charWidth + (canvas.width / 2);
+                let mSY = (mouseTileY - player.y) * charHeight + (canvas.height / 2);
+                pushQuad('█', mSX, mSY, '#03a9f4', 0.4);
+            }
+
             // Draw Network Players
             for (let id in networkPlayers) {
                 let p = networkPlayers[id];
@@ -4911,32 +5302,49 @@ if (m.disabledByPLC) {
 
             // --- PLACING PREVIEW (BLUEPRINT GHOST) ---
             if (isPlacingActive && placingItem.type) {
-                let px = Math.floor(player.x), py = Math.floor(player.y);
-
                 if (placingItem.type === 'machine') {
                     let mDef = MACHINE_DEFS[placingItem.id];
                     let r = mDef.rotations[placingItem.rot % mDef.rotations.length];
                     for (let y = 0; y < r.h; y++) {
                         for (let x = 0; x < r.w; x++) {
-                            const sX = (px + x - player.x) * charWidth + (canvas.width / 2);
-                            const sY = (py + y - player.y) * charHeight + (canvas.height / 2);
-                            pushQuad(r.art[y][x], sX, sY, mDef.color, 0.3); // Reduced alpha to separate from queued halos
+                            const sX = (mouseTileX + x - player.x) * charWidth + (canvas.width / 2);
+                            const sY = (mouseTileY + y - player.y) * charHeight + (canvas.height / 2);
+                            pushQuad(r.art[y][x], sX, sY, mDef.color, 0.3);
                         }
                     }
-                    if (r.outX !== null && r.outY !== null) pushQuad('█', (px + r.outX - player.x) * charWidth + (canvas.width / 2), (py + r.outY - player.y) * charHeight + (canvas.height / 2), '#e65000', 0.3);
-                    if (r.out2X !== undefined && r.out2X !== null && r.out2Y !== null) pushQuad('█', (px + r.out2X - player.x) * charWidth + (canvas.width / 2), (py + r.out2Y - player.y) * charHeight + (canvas.height / 2), '#03a9f4', 0.3);
+                    if (r.outX !== null && r.outY !== null) pushQuad('█', (mouseTileX + r.outX - player.x) * charWidth + (canvas.width / 2), (mouseTileY + r.outY - player.y) * charHeight + (canvas.height / 2), '#e65000', 0.3);
+                    if (r.out2X !== undefined && r.out2X !== null && r.out2Y !== null) pushQuad('█', (mouseTileX + r.out2X - player.x) * charWidth + (canvas.width / 2), (mouseTileY + r.out2Y - player.y) * charHeight + (canvas.height / 2), '#03a9f4', 0.3);
                 } else if (placingItem.type === 'logistics') {
-                    const sX = (px - player.x) * charWidth + (canvas.width / 2);
-                    const sY = (py - player.y) * charHeight + (canvas.height / 2);
-                    let shapeGrp = SHAPE_ORDER[placingItem.shapeIdx];
-                    let sId = SHAPE_GROUPS[shapeGrp][placingItem.rot % SHAPE_GROUPS[shapeGrp].length];
-                    let charToDraw = LOGISTICS_SHAPES[sId].char;
-                    if (placingItem.network === 'rail' && HEAVY_LINES[charToDraw]) charToDraw = HEAVY_LINES[charToDraw];
-                    else if ((placingItem.network === 'acid' || placingItem.network === 'hyper_wire' || placingItem.network === 'sicu') && DOUBLE_LINES[charToDraw]) charToDraw = DOUBLE_LINES[charToDraw];
-                    pushQuad(charToDraw, sX, sY, LOGISTICS_COLORS[placingItem.network], 0.3);
+                    if (placingItem.network === 'floor') {
+                        const sX = (mouseTileX - player.x) * charWidth + (canvas.width / 2);
+                        const sY = (mouseTileY - player.y) * charHeight + (canvas.height / 2);
+                        pushQuad('=', sX, sY, '#424242', 0.3);
+                    } else if (isDragging && dragStartTile) {
+                        let path = getDragPipePathCoords(dragStartTile.x, dragStartTile.y, mouseTileX, mouseTileY);
+                        let shapes = computePipeShapesForPath(path, placingItem.network);
+                        for (let i = 0; i < path.length; i++) {
+                            let pt = path[i];
+                            let sId = shapes[i];
+                            const sX = (pt.x - player.x) * charWidth + (canvas.width / 2);
+                            const sY = (pt.y - player.y) * charHeight + (canvas.height / 2);
+                            let charToDraw = LOGISTICS_SHAPES[sId].char;
+                            if (placingItem.network === 'rail' && HEAVY_LINES[charToDraw]) charToDraw = HEAVY_LINES[charToDraw];
+                            else if ((placingItem.network === 'acid' || placingItem.network === 'hyper_wire' || placingItem.network === 'sicu') && DOUBLE_LINES[charToDraw]) charToDraw = DOUBLE_LINES[charToDraw];
+                            pushQuad(charToDraw, sX, sY, LOGISTICS_COLORS[placingItem.network], 0.3);
+                        }
+                    } else {
+                        const sX = (mouseTileX - player.x) * charWidth + (canvas.width / 2);
+                        const sY = (mouseTileY - player.y) * charHeight + (canvas.height / 2);
+                        let shapeGrp = SHAPE_ORDER[placingItem.shapeIdx];
+                        let sId = SHAPE_GROUPS[shapeGrp][placingItem.rot % SHAPE_GROUPS[shapeGrp].length];
+                        let charToDraw = LOGISTICS_SHAPES[sId].char;
+                        if (placingItem.network === 'rail' && HEAVY_LINES[charToDraw]) charToDraw = HEAVY_LINES[charToDraw];
+                        else if ((placingItem.network === 'acid' || placingItem.network === 'hyper_wire' || placingItem.network === 'sicu') && DOUBLE_LINES[charToDraw]) charToDraw = DOUBLE_LINES[charToDraw];
+                        pushQuad(charToDraw, sX, sY, LOGISTICS_COLORS[placingItem.network], 0.3);
+                    }
                 } else if (placingItem.type === 'natural') {
-                    const sX = (px - player.x) * charWidth + (canvas.width / 2);
-                    const sY = (py - player.y) * charHeight + (canvas.height / 2);
+                    const sX = (mouseTileX - player.x) * charWidth + (canvas.width / 2);
+                    const sY = (mouseTileY - player.y) * charHeight + (canvas.height / 2);
                     let tile = TILE_LOOKUP[placingItem.id];
                     if (tile) {
                         pushQuad(tile.char, sX, sY, tile.color, 0.4);
