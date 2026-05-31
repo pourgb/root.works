@@ -1224,6 +1224,7 @@
         });
         Object.defineProperty(window, 'mapPipes', {
             get: () => mapPipes,
+            set: (v) => mapPipes = v,
             configurable: true
         });
         Object.defineProperty(window, 'hasPipeMap', {
@@ -1246,6 +1247,7 @@
         });
         Object.defineProperty(window, 'gameState', {
             get: () => gameState,
+            set: (v) => gameState = v,
             configurable: true
         });
         Object.defineProperty(window, 'itemsOnBelts', {
