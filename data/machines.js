@@ -1324,6 +1324,7 @@ export const MACHINE_DEFS = {
 
                     let currentItems = {}, powerDemand = 0, powerStored = 0;
                     let idleMachines = 0, workingMachines = 0, bottlePower = 0, bottleInput = 0, bottleOutput = 0, bottleneckDetails = {};
+                    let machineHeat = {}, totalHeat = 0, reactorHeat = 0;
 
                     for (let nm of machines) {
                         let buffers = [nm.inv || {}, nm.outBuffer || {}, nm.out2Buffer || {}];
@@ -1334,6 +1335,8 @@ export const MACHINE_DEFS = {
                         }
                         if (nm.energy !== undefined) powerStored += nm.energy;
                         if (nm.def.energy && nm.def.energy.type === 'electric') powerDemand += (nm.def.energy.usage || 0);
+                        if (nm.heat !== undefined) { machineHeat[nm.type] = nm.heat; totalHeat += nm.heat; }
+                        if (nm.type === 'machine_fusion_reactor' && nm.heat !== undefined) reactorHeat = nm.heat;
 
                         let isWorking = false;
                         if (nm.def.isWorking) isWorking = nm.def.isWorking(nm);
@@ -1381,7 +1384,8 @@ export const MACHINE_DEFS = {
                         machines: machines.length, defense: defenseNodes.length, hasRadar: activeRadar,
                         working: workingMachines, idle: idleMachines, powerStored: powerStored,
                         powerDemand: powerDemand, bottlePower: bottlePower, bottleInput: bottleInput,
-                        bottleOutput: bottleOutput, details: bottleneckDetails, items: currentItems, rates: m.cdhRates
+                        bottleOutput: bottleOutput, details: bottleneckDetails, items: currentItems, rates: m.cdhRates,
+                        totalHeat: totalHeat, reactorHeat: reactorHeat, machineHeat: machineHeat
                     };
                 }
             }
@@ -1737,6 +1741,10 @@ export const MACHINE_DEFS = {
                             m.currentValue = cdh.cdhData ? (cdh.cdhData.bottleInput || 0) : 0;
                         } else if (target === 'bottleOutput') {
                             m.currentValue = cdh.cdhData ? (cdh.cdhData.bottleOutput || 0) : 0;
+                        } else if (target === 'heat' || target === 'totalHeat') {
+                            m.currentValue = cdh.cdhData ? (cdh.cdhData.totalHeat || 0) : 0;
+                        } else if (target === 'reactorHeat') {
+                            m.currentValue = cdh.cdhData ? (cdh.cdhData.reactorHeat || 0) : 0;
                         } else {
                             m.currentValue = cdh.digiItems ? (cdh.digiItems[target] || 0) : 0;
                         }
@@ -2010,7 +2018,7 @@ export const MACHINE_DEFS = {
                 }
             },
                 'machine_steam_turbine': {
-        recipes: [{ in: { 'steam': 8 }, out: {} }],
+        recipes: [{ in: { 'high_pressure_steam': 8 }, out: {} }],
                 id: 'machine_steam_turbine', name: 'Heavy Steam Turbine', color: '#546e7a',
                 rotations: [
                     { w: 11, h: 13, art: ["/---------\\", "|  ~~~~~  |", "| ======= |", "| ======= |", "| ======= |", "| ======= |", "| ======= |", "| ======= |", "| ======= |", "| ======= |", "| ======= |", "|  ~~~~~  |", "\\---------/"], outX: null, outY: null }
@@ -2021,9 +2029,9 @@ export const MACHINE_DEFS = {
 
                     if (m.animTimer > 0) m.animTimer -= dt;
 
-                    if (m.energy < 250000 && m.inv['steam'] > 0) {
-                        let burnAmt = Math.min(m.inv['steam'], 8);
-                        m.inv['steam'] -= burnAmt;
+                    if (m.energy < 250000 && m.inv['high_pressure_steam'] > 0) {
+                        let burnAmt = Math.min(m.inv['high_pressure_steam'], 8);
+                        m.inv['high_pressure_steam'] -= burnAmt;
                         m.energy = Math.min(250000, m.energy + (burnAmt * 100));
                         m.animTimer = 0.5;
                     }
@@ -2032,7 +2040,7 @@ export const MACHINE_DEFS = {
                 renderAnim: Anim.wave('=', '#b2ebf2')
             },
                 'machine_fission_reactor': {
-        recipes: [{ in: { 'uranium_fuel_rod': 1, 'water': 40 }, out: { 'steam': 320 }, out2: { 'nuclear_waste': 1 } }],
+        recipes: [{ in: { 'uranium_fuel_rod': 1, 'water': 40 }, out: { 'high_pressure_steam': 320 }, out2: { 'nuclear_waste': 1 } }],
                 id: 'machine_fission_reactor', name: 'Fission Reactor CORE', color: '#37474f',
                 rotations: [
                     {
@@ -2051,28 +2059,28 @@ export const MACHINE_DEFS = {
                     m.heat = m.heat || 0; m.fuelTime = m.fuelTime || 0;
                     m.inv = m.inv || {}; m.outBuffer = m.outBuffer || {}; m.out2Buffer = m.out2Buffer || {};
 
-                    if (m.fuelTime <= 0 && m.inv['uranium_fuel_rod'] > 0) { m.inv['uranium_fuel_rod']--; m.fuelTime = 30.0; }
+                    if (m.fuelTime <= 0 && m.inv['uranium_fuel_rod'] > 0) { m.inv['uranium_fuel_rod']--; m.fuelTime = 300.0; }
 
                     if (m.fuelTime > 0) {
                         m.fuelTime -= dt;
-                        let heatGen = 300 * dt;
+                        let heatGen = 20 * dt;
                         if (m.inv['graphite_control_rod'] > 0) {
-                            heatGen = 25 * dt;
-                            if (Math.random() < 0.05 * dt) m.inv['graphite_control_rod']--;
+                            heatGen = 2 * dt;
+                            if (Math.random() < 0.01 * dt) m.inv['graphite_control_rod']--;
                         }
                         m.heat += heatGen;
                         m.wasteTimer = (m.wasteTimer || 0) + dt;
-                        if (m.wasteTimer >= 3.0) {
+                        if (m.wasteTimer >= 30.0) {
                             m.wasteTimer = 0;
                             if ((m.out2Buffer['nuclear_waste'] || 0) < 200) m.out2Buffer['nuclear_waste'] = (m.out2Buffer['nuclear_waste'] || 0) + 1;
-                            else m.heat += 500 * dt;
+                            else m.heat += 50 * dt;
                         }
                     }
                     if (m.heat > 0 && m.inv['water'] > 0) {
-                        let coolAmt = Math.min(m.inv['water'], 40); // Increased cooling capacity
+                        let coolAmt = Math.min(m.inv['water'], 20);
                         m.inv['water'] -= coolAmt;
-                        m.heat = Math.max(0, m.heat - (coolAmt * 5));
-                        m.outBuffer['steam'] = (m.outBuffer['steam'] || 0) + (coolAmt * 8); // More steam per water
+                        m.heat = Math.max(0, m.heat - (coolAmt * 2));
+                        m.outBuffer['high_pressure_steam'] = (m.outBuffer['high_pressure_steam'] || 0) + (coolAmt * 4);
                     }
                     if (m.heat >= 10000) triggerNuclearExplosion(m.x + 9, m.y + 9);
                 },
@@ -2088,7 +2096,41 @@ export const MACHINE_DEFS = {
                     return null;
                 }
             },
-                'machine_particle_collider': {
+                'machine_electric_water_pump': {
+                        recipes: [{ in: {}, out: { 'water': 10 } }],
+                        id: 'machine_electric_water_pump', name: 'Electric Water Pump', color: '#0277bd',
+                        rotations: [
+                            { w: 3, h: 3, art: ["/-\\", "|P|", "\\-/"], outX: 3, outY: 1 }
+                        ],
+                        energy: { type: 'electric', usage: 1000 }, maxEnergy: 2000, processTime: 0.2,
+                        renderAnim: Anim.glow('P', ' ', '#4fc3f7')
+                    },
+                    'machine_atmospheric_regulator': {
+                        recipes: [{ in: { 'high_pressure_steam': 1, 'water': 1 }, out: { 'steam': 3 } }],
+                        id: 'machine_atmospheric_regulator', name: 'Atmospheric Regulator', color: '#795548',
+                        rotations: [
+                            { w: 3, h: 3, art: ["/-\\", "|A|", "\\-/"], outX: 3, outY: 1 }
+                        ],
+                        energy: { type: 'none' },
+                        updateOverride: function (m, r, dt) {
+                            m.inv = m.inv || {}; m.outBuffer = m.outBuffer || {};
+                            if ((m.inv['high_pressure_steam'] || 0) >= 1 && (m.inv['water'] || 0) >= 1) {
+                                m.inv['high_pressure_steam']--;
+                                m.inv['water']--;
+                                m.outBuffer['steam'] = (m.outBuffer['steam'] || 0) + 3;
+                            }
+                        }
+                    },
+                    'machine_hps_tank': {
+                        id: 'machine_hps_tank', name: 'HPS Tank', color: '#4e342e',
+                        rotations: [
+                            { w: 3, h: 3, art: ["/-\\", "|T|", "\\-/"], outX: 3, outY: 1 }
+                        ],
+                        energy: { type: 'none' }, maxStack: 50000,
+                        acceptsItem: (m, itm) => acceptsTank(m, itm, ['high_pressure_steam']),
+                        updateOverride: tankUpdate
+                    },
+                    'machine_particle_collider': {
                 id: 'machine_particle_collider', name: 'Particle Collider', color: '#1a237e',
                 rotations: [
                     {
@@ -2184,6 +2226,8 @@ export const MACHINE_DEFS = {
                 updateOverride: function (m, r, dt) {
                     m.inv = m.inv || {}; m.outBuffer = m.outBuffer || {}; m.fusionActive = m.fusionActive || false;
                     m.charge = m.charge || 0; m.heat = m.heat || 0;
+                    m.burnTimer = m.burnTimer || 0;
+                    m.powerLevel = m.powerLevel || 0;
 
                     // Absorb Charge from adjacent Chargers
                     for (let am of activeMachines) {
@@ -2194,14 +2238,32 @@ export const MACHINE_DEFS = {
                     }
 
                     if (!m.fusionActive) {
-                        m.charge = Math.max(0, m.charge - 10 * dt); // Decay
+                        m.charge = Math.max(0, m.charge - 10 * dt);
+                        m.powerLevel = Math.max(0, m.powerLevel - 100000 * dt);
                         return;
                     }
 
-                    // IF RUNNING
+                    // Fuel burn every 5 seconds
+                    m.burnTimer += dt;
                     let fuelBurned = false;
-                    if (m.inv['deuterium'] > 0 && m.inv['tritium'] > 0 && m.charge > 1000000) {
-                        m.inv['deuterium']--; m.inv['tritium']--; fuelBurned = true;
+                    if (m.burnTimer >= 5.0 && m.inv['deuterium'] > 0 && m.inv['tritium'] > 0 && m.charge > 1000000) {
+                        m.burnTimer = 0;
+                        m.inv['deuterium']--; m.inv['tritium']--;
+                        m.charge -= 1000000;
+                        fuelBurned = true;
+                    }
+
+                    // Ramp power level toward target
+                    let targetPower = fuelBurned ? 10000000 : 0;
+                    if (m.powerLevel < targetPower) {
+                        m.powerLevel = Math.min(targetPower, m.powerLevel + 500000 * dt);
+                    } else if (m.powerLevel > targetPower) {
+                        m.powerLevel = Math.max(0, m.powerLevel - 200000 * dt);
+                    }
+
+                    // baseline heat so cDH shows non-zero while fusion-capable
+                    if ((m.inv['deuterium'] || 0) > 0 && (m.inv['tritium'] || 0) > 0) {
+                        m.heat += 50 * dt;
                     }
 
                     if (fuelBurned) {
@@ -2209,41 +2271,36 @@ export const MACHINE_DEFS = {
                             m.inv['liquid_n2'] -= 10;
                             m.outBuffer['superheated_n2'] = (m.outBuffer['superheated_n2'] || 0) + 10;
                         } else {
-                            m.heat += 50000 * dt; // Rapid overheating
+                            m.heat += 5000 * dt;
                         }
+                    }
 
-                        // Power generation & SiCu Manifold check
-                        let generatedPower = 10000000 * dt;
-                        let connectedSiCu = 0;
-                        for (let x = m.x - 1; x <= m.x + 25; x++) {
-                            if (mapPipes['sicu'][(m.y - 1) * WORLD_SIZE + x] > 0) connectedSiCu++;
-                            if (mapPipes['sicu'][(m.y + 25) * WORLD_SIZE + x] > 0) connectedSiCu++;
-                        }
-                        for (let y = m.y; y < m.y + 25; y++) {
-                            if (mapPipes['sicu'][y * WORLD_SIZE + (m.x - 1)] > 0) connectedSiCu++;
-                            if (mapPipes['sicu'][y * WORLD_SIZE + (m.x + 25)] > 0) connectedSiCu++;
-                        }
+                    // SiCu Manifold check — heat and power routing
+                    let connectedSiCu = 0;
+                    for (let x = m.x - 1; x <= m.x + 25; x++) {
+                        if (mapPipes['sicu'][(m.y - 1) * WORLD_SIZE + x] > 0) connectedSiCu++;
+                        if (mapPipes['sicu'][(m.y + 25) * WORLD_SIZE + x] > 0) connectedSiCu++;
+                    }
+                    for (let y = m.y; y < m.y + 25; y++) {
+                        if (mapPipes['sicu'][y * WORLD_SIZE + (m.x - 1)] > 0) connectedSiCu++;
+                        if (mapPipes['sicu'][y * WORLD_SIZE + (m.x + 25)] > 0) connectedSiCu++;
+                    }
 
-                        if (connectedSiCu === 0) {
-                            m.heat += 100000 * dt;
+                    if (connectedSiCu === 0) {
+                        m.heat += 10000 * dt;
+                    } else if (m.powerLevel > 0) {
+                        let loadPerCable = m.powerLevel / connectedSiCu;
+                        if (loadPerCable > 1000000) {
+                            for (let x = m.x - 1; x <= m.x + 25; x++) { mapPipes['sicu'][(m.y - 1) * WORLD_SIZE + x] = 0; mapPipes['sicu'][(m.y + 25) * WORLD_SIZE + x] = 0; }
+                            for (let y = m.y; y < m.y + 25; y++) { mapPipes['sicu'][y * WORLD_SIZE + (m.x - 1)] = 0; mapPipes['sicu'][y * WORLD_SIZE + (m.x + 25)] = 0; }
+                            floatText(m.x + 12, m.y + 12, "SiCu MANIFOLD VAPORIZED!", "#aa00ff");
                         } else {
-                            let loadPerCable = generatedPower / connectedSiCu;
-                            if (loadPerCable > 1000000) {
-                                // VAPORIZE CABLES
-                                for (let x = m.x - 1; x <= m.x + 25; x++) { mapPipes['sicu'][(m.y - 1) * WORLD_SIZE + x] = 0; mapPipes['sicu'][(m.y + 25) * WORLD_SIZE + x] = 0; }
-                                for (let y = m.y; y < m.y + 25; y++) { mapPipes['sicu'][y * WORLD_SIZE + (m.x - 1)] = 0; mapPipes['sicu'][y * WORLD_SIZE + (m.x + 25)] = 0; }
-                                floatText(m.x + 12, m.y + 12, "SiCu MANIFOLD VAPORIZED!", "#aa00ff");
-                            } else {
-                                // Find Transformers to push power into
-                                let transformers = activeMachines.filter(tm => tm && tm.type === 'machine_mega_transformer');
-                                if (transformers.length > 0) {
-                                    let give = generatedPower / transformers.length;
-                                    transformers.forEach(tm => tm.energy = Math.min(10000000, (tm.energy || 0) + give));
-                                }
+                            let transformers = activeMachines.filter(tm => tm && tm.type === 'machine_mega_transformer');
+                            if (transformers.length > 0) {
+                                let give = m.powerLevel / transformers.length;
+                                transformers.forEach(tm => tm.energy = Math.min(10000000, (tm.energy || 0) + give));
                             }
                         }
-                    } else {
-                        m.fusionActive = false; // flame out
                     }
 
                     if (m.heat > 500000) triggerSupernova(m.x + 12, m.y + 12);
@@ -3380,6 +3437,11 @@ export const recipes = [
     { name: "Lead-Acid Battery Bank", env: "table", output: { id: "machine_battery_lead", amount: 1 }, input: { "lead_plate": 10, "sulfuric_acid": 10, "copper_wire": 10 } },
     { name: "Heavy Item Pipe x5", env: "table", output: { id: "item_pipe_heavy", amount: 5 }, input: { "item_pipe": 5, "steel_plate": 2 } },
     { name: "Heavy Brass Pipe x5", env: "table", output: { id: "brass_pipe_heavy", amount: 5 }, input: { "brass_pipe": 5, "steel_plate": 2 } },
+    { name: "High Pressure Pipe x5", env: "table", output: { id: "high_pressure_pipe", amount: 5 }, input: { "steel_pipe": 5, "titanium_hull_plate": 1 } },
+    { name: "Heavy Copper Pipe x5", env: "table", output: { id: "heavy_copper_pipe", amount: 5 }, input: { "copper_pipe": 5, "steel_plate": 2 } },
+    { name: "Electric Water Pump", env: "table", output: { id: "machine_electric_water_pump", amount: 1 }, input: { "machine_heavy_pump": 1, "motor": 5, "copper_wire": 20 } },
+    { name: "Atmospheric Regulator", env: "table", output: { id: "machine_atmospheric_regulator", amount: 1 }, input: { "titanium_hull_plate": 10, "steel_pipe": 10, "high_pressure_pipe": 10 } },
+    { name: "HPS Tank", env: "table", output: { id: "machine_hps_tank", amount: 1 }, input: { "steel_plate": 20, "high_pressure_pipe": 10 } },
     { name: "Plasmatic Superconductor x5", env: "table", output: { id: "plasmatic_superconductor", amount: 5 }, input: { "hyper_wire": 5, "quantum_circuit": 1, "plasma_composite_plate": 1 } },
     { name: "Chemical Bulk Tank", env: "table", output: { id: "machine_chemical_tank", amount: 1 }, input: { "invar_casing": 20, "glass_pipe": 40 } },
     { name: "Quantum Fiber Cable x5", env: "table", output: { id: "quantum_fiber_cable", amount: 5 }, input: { "quartz_cable": 5, "antimatter_pellet": 1 } },

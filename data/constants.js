@@ -1,5 +1,5 @@
 export const ORTHO_DIRS =[{x:1,y:0}, {x:-1,y:0}, {x:0,y:1}, {x:0,y:-1}];
-export const NETWORKS =['item', 'wire', 'iron', 'copper', 'brass', 'gas', 'acid', 'steel', 'drone_farm', 'drone_carry','quartz', 'hyper_wire', 'defense_signal', 'waste', 'item_heavy', 'brass_heavy', 'silver', 'insulated', 'sicu', 'plasmatic', 'analog', 'rail', 'quantum_fiber', 'plasma_conduit', 'magnetic_pipe'];
+export const NETWORKS =['item', 'wire', 'iron', 'copper', 'brass', 'gas', 'acid', 'steel', 'drone_farm', 'drone_carry','quartz', 'hyper_wire', 'defense_signal', 'waste', 'item_heavy', 'brass_heavy', 'silver', 'insulated', 'sicu', 'plasmatic', 'analog', 'rail', 'quantum_fiber', 'plasma_conduit', 'magnetic_pipe', 'hps', 'heavy_copper'];
 export const TILE_DEFS_RAW = [
         [0, ' ', 'transparent'], [1, ' ', 'atransparent'],
         [2, '^', '#2e7d32'], [3, '|', '#5d4037'],

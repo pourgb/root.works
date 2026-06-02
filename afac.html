@@ -552,7 +552,7 @@
             window.cachedWasmBuffer = wasm.memory.buffer;
 
             // Keep standard JS arrays for the pipes Rust doesn't need to BFS
-            const nonRustPipes = ['item', 'iron', 'copper', 'brass', 'gas', 'acid', 'steel', 'drone_farm', 'drone_carry', 'defense_signal', 'floor', 'waste', 'item_heavy', 'brass_heavy'];
+            const nonRustPipes = ['item', 'iron', 'copper', 'brass', 'gas', 'acid', 'steel', 'drone_farm', 'drone_carry', 'defense_signal', 'floor', 'waste', 'item_heavy', 'brass_heavy', 'hps', 'heavy_copper'];
             for (let net of nonRustPipes) {
                 mapPipes[net] = new Uint8Array(1500 * 1500);
             }
@@ -777,6 +777,7 @@
             if (itemId === 'positron_stream' || itemId === 'antiproton') return 'magnetic';
             if (itemId === 'lava') return 'iron';
             if (itemId === 'water' || itemId === 'brine' || itemId === 'heavy_water') return 'copper';
+            if (itemId === 'high_pressure_steam') return 'hps';
             if (itemId === 'steam') return 'brass';
             if (['oxygen', 'hydrogen', 'sulfur_dioxide', 'chlorine', 'petroleum_gas', 'unrefined_gas', 'nitrogen_gas'].includes(itemId)) return 'gas';
             if (itemId === 'sulfuric_acid') return 'acid';
@@ -2922,6 +2923,7 @@
                 <div><strong style="color:#aaa;">Status:</strong> <span style="color:#4caf50;">${data.working} Working</span> | <span style="color:#ff9800;">${data.idle} Idle</span></div>
                 <div><strong style="color:#aaa;">Power Demand:</strong> ${data.powerDemand} kW</div>
                 <div><strong style="color:#aaa;">Power Stored:</strong> ${Math.floor(data.powerStored)} kJ</div>
+                <div><strong style="color:#aaa;">Total Heat:</strong> ${Math.floor(data.totalHeat)} K</div>
             </div>
         </div>`;
 
@@ -4486,6 +4488,7 @@ let p = Math.floor(progressRatio * 100);
             if (!m || !m.def || !m.def.energy) return 0;
             if (m.def.energy.capacity !== undefined) return m.def.energy.capacity;
             if (m.def.energy.storage) return 80000;
+            if (m.def.maxEnergy !== undefined) return m.def.maxEnergy;
             return 1000;
         }
 
@@ -4865,6 +4868,7 @@ let p = Math.floor(progressRatio * 100);
                     // Support pushing to heavy pipes naturally
                     if (primaryNet === 'item') allowedNets.push('item_heavy');
                     if (primaryNet === 'brass') allowedNets.push('brass_heavy');
+                    if (primaryNet === 'copper') allowedNets.push('heavy_copper');
 
                     let pushed = false;
                     for (let net of allowedNets) {
@@ -5043,7 +5047,7 @@ let p = Math.floor(progressRatio * 100);
                             let cToDraw = LOGISTICS_SHAPES[pId - 1].char;
                             if (n === 'rail' && HEAVY_LINES[cToDraw]) {
                                 cToDraw = HEAVY_LINES[cToDraw];
-                            } else if ((n === 'acid' || n === 'hyper_wire' || n === 'sicu') && DOUBLE_LINES[cToDraw]) {
+                            } else if ((n === 'acid' || n === 'hyper_wire' || n === 'sicu' || n === 'hps' || n === 'heavy_copper') && DOUBLE_LINES[cToDraw]) {
                                 cToDraw = DOUBLE_LINES[cToDraw];
                             }
                             pushQuad(cToDraw, sX, sY, LOGISTICS_COLORS[n], 1.0);
@@ -5291,7 +5295,7 @@ if (m.disabledByPLC) {
                     const sY = (q.py - player.y) * charHeight + (canvas.height / 2);
                     let charToDraw = LOGISTICS_SHAPES[q.sId].char;
                     if (q.network === 'rail' && HEAVY_LINES[charToDraw]) charToDraw = HEAVY_LINES[charToDraw];
-                    else if ((q.network === 'acid' || q.network === 'hyper_wire' || q.network === 'sicu') && DOUBLE_LINES[charToDraw]) charToDraw = DOUBLE_LINES[charToDraw];
+                    else if ((q.network === 'acid' || q.network === 'hyper_wire' || q.network === 'sicu' || q.network === 'hps' || q.network === 'heavy_copper') && DOUBLE_LINES[charToDraw]) charToDraw = DOUBLE_LINES[charToDraw];
                     pushQuad(charToDraw, sX, sY, LOGISTICS_COLORS[q.network], 0.6);
                 } else if (q.type === 'floor') {
                     const sX = (q.px - player.x) * charWidth + (canvas.width / 2);
@@ -5329,7 +5333,7 @@ if (m.disabledByPLC) {
                             const sY = (pt.y - player.y) * charHeight + (canvas.height / 2);
                             let charToDraw = LOGISTICS_SHAPES[sId].char;
                             if (placingItem.network === 'rail' && HEAVY_LINES[charToDraw]) charToDraw = HEAVY_LINES[charToDraw];
-                            else if ((placingItem.network === 'acid' || placingItem.network === 'hyper_wire' || placingItem.network === 'sicu') && DOUBLE_LINES[charToDraw]) charToDraw = DOUBLE_LINES[charToDraw];
+                            else if ((placingItem.network === 'acid' || placingItem.network === 'hyper_wire' || placingItem.network === 'sicu' || placingItem.network === 'hps' || placingItem.network === 'heavy_copper') && DOUBLE_LINES[charToDraw]) charToDraw = DOUBLE_LINES[charToDraw];
                             pushQuad(charToDraw, sX, sY, LOGISTICS_COLORS[placingItem.network], 0.3);
                         }
                     } else {
@@ -5339,7 +5343,7 @@ if (m.disabledByPLC) {
                         let sId = SHAPE_GROUPS[shapeGrp][placingItem.rot % SHAPE_GROUPS[shapeGrp].length];
                         let charToDraw = LOGISTICS_SHAPES[sId].char;
                         if (placingItem.network === 'rail' && HEAVY_LINES[charToDraw]) charToDraw = HEAVY_LINES[charToDraw];
-                        else if ((placingItem.network === 'acid' || placingItem.network === 'hyper_wire' || placingItem.network === 'sicu') && DOUBLE_LINES[charToDraw]) charToDraw = DOUBLE_LINES[charToDraw];
+                        else if ((placingItem.network === 'acid' || placingItem.network === 'hyper_wire' || placingItem.network === 'sicu' || placingItem.network === 'hps' || placingItem.network === 'heavy_copper') && DOUBLE_LINES[charToDraw]) charToDraw = DOUBLE_LINES[charToDraw];
                         pushQuad(charToDraw, sX, sY, LOGISTICS_COLORS[placingItem.network], 0.3);
                     }
                 } else if (placingItem.type === 'natural') {
