@@ -218,6 +218,8 @@ export const MACHINE_DEFS = {
         id: 'machine_miner', name: 'Automated Miner', color: '#e65100',
         rotations: genRot4({ w: 2, h: 2, art: ["/\\", "MM"], outX: 0, outY: 2 }),
         energy: { type: 'none' }, processTime: 2.0,
+        resourceExtractor: true, placementRequirement: 'ore',
+        wikiHints: 'Must be placed on top of an ore tile (iron, copper, coal, stone, etc.). Automatically mines that ore type over time. Outputs raw_coal_lump for coal tiles, otherwise outputs the ore directly. Stone and coal mine every 2s; metal ores every 4s.',
         updateOverride: function (m, r, dt) {
             if (m.oreType) {
                 let speed = (['stone', 'coal'].includes(m.oreType) ? 2.0 : 4.0);
@@ -231,6 +233,7 @@ export const MACHINE_DEFS = {
         id: 'machine_furnace_coal', name: 'Coal Furnace', color: '#424242',
         rotations: genRot4({ w: 4, h: 4, art: ["/--\\", "|==|", "|==|", "\\FF/"], outX: 1, outY: 4 }),
         energy: { type: 'burner', fuel: 'coal', usage: 1 }, processTime: 5.0,
+        wikiHints: 'Smelts any ore into its ingot using coal as fuel. Has a 20% chance to also produce ash as a byproduct on the secondary output. Slower and cheaper than the electric furnace.',
         recipes: ORES.map(o => ({ in: { [`${o}_ore`]: 1 }, out: { [`${o}_ingot`]: 1 }, chanceOut: { item: 'ash', chance: 0.2 } })),
         renderAnim: Anim.waveAlt('=', '#ff5722')
     },
@@ -278,6 +281,7 @@ export const MACHINE_DEFS = {
         id: 'machine_generator', name: 'Coal Generator', color: '#757575',
         rotations: [{ w: 5, h: 5, art: ["/GGG\\", "|===|", "|===|", "|===|", "\\GGG/"], outX: null, outY: null }],
         energy: { type: 'none' }, maxEnergy: 10000,
+        wikiHints: 'POWER GENERATOR — does NOT output items. Consumes coal (1 per 3s) to fill its internal energy buffer (max 10,000 kJ). Electric machines on the same power grid draw from this buffer. Provides roughly 100 kW of electrical power. Connect via wire network.',
         updateOverride: function (m, r, dt) {
             m.inv = m.inv || {}; m.energy = m.energy || 0;
             if (m.energy < 10000 && m.inv['coal'] > 0 && m.timer >= 3.0) {
@@ -296,6 +300,9 @@ export const MACHINE_DEFS = {
         rotations: genRot4({ w: 3, h: 3, art: ["/-\\", "|#|", "\\v/"], outX: 1, outY: 3 }),
         energy: { type: 'electric', usage: 10 }, maxEnergy: 500,
         processTime: 20.0,
+        wikiHints: 'Passively produces biomass over time. Operates in 3 modes depending on available resources. No item input needed — it is a biological generator.',
+        behaviorNote: 'Mode 1 (Electric, fastest): Draws 10 kJ/s from power grid — 2x speed, produces 1 biomass per 10s. Mode 2 (Biomass/coal/wood fuel): Consumes 1 fuel every 10s — 1x speed, produces 1 biomass per 20s. Mode 3 (Solar, slowest): Daytime only, no fuel — 0.25x speed. Priority: Electric > Fuel > Solar.',
+        resourceExtractor: true, placementRequirement: 'any',
         updateOverride: function (m, r, dt) {
             m.timer = m.timer || 0; m.inv = m.inv || {}; m.energy = m.energy || 0;
             let speed = 0; let isDay = window.dayCycle < 0.5;
@@ -390,6 +397,8 @@ export const MACHINE_DEFS = {
         id: 'machine_augmentation_chamber', name: 'Augmentation Chamber', color: '#006064',
         rotations: genRot4({ w: 6, h: 6, art: ["/----\\", "|A++A|", "|+  +|", "|+  +|", "|A++A|", "\\--v-/"], outX: 3, outY: 6 }),
         energy: { type: 'electric', usage: 1000 }, maxEnergy: 20000,
+        wikiHints: 'PLAYER BUFF MACHINE — does NOT produce any items. Consumes neural_tissue + growth_serum + 10,000 kJ to permanently apply an augmentation buff to the player. One use per activation. Cannot be automated for item output.',
+        behaviorNote: 'Each activation takes 10 seconds and requires: energy >= 1000 kJ, 1 neural_tissue, 1 growth_serum in the input slot. On completion, calls applyAugmentationBuff() which permanently upgrades a player stat. Output port is present but never emits items.',
         updateOverride: function (m, r, dt) {
             m.inv = m.inv || {}; m.energy = m.energy || 0;
             if (m.energy >= 1000 && m.inv['neural_tissue'] > 0 && m.inv['growth_serum'] > 0) {
@@ -422,6 +431,8 @@ export const MACHINE_DEFS = {
         id: 'machine_coal_pump', name: 'Coal Pump', color: '#424242',
         rotations: genRot4({ w: 1, h: 2, art: ["C", "="], outX: 0, outY: 2 }, { w: 2, h: 1, art: ["=C"], outX: -1, outY: 0 }),
         energy: { type: 'burner', fuel: 'coal', usage: 1 }, processTime: 3.0,
+        resourceExtractor: true, placementRequirement: 'any',
+        wikiHints: 'Extracts water from the ground. Does NOT need any water input — it generates water using coal as fuel (1 coal per 3s). The earliest source of water in Stage 2. Outputs water via copper pipe network.',
         recipes: [{ in: {}, out: { 'water': 1 } }],
         renderAnim: Anim.wave('=', '#03a9f4')
     },
@@ -429,6 +440,8 @@ export const MACHINE_DEFS = {
         id: 'machine_brass_pump', name: 'Brass Pump', color: '#fbc02d',
         rotations: genRot4({ w: 1, h: 2, art: ["P", "="], outX: 0, outY: 2 }, { w: 2, h: 1, art: ["=P"], outX: -1, outY: 0 }),
         energy: { type: 'fluid', fuel: 'steam', usage: 1 }, processTime: 0.5,
+        resourceExtractor: true, placementRequirement: 'any',
+        wikiHints: 'Faster water extractor than the coal pump — produces 1 water per 0.5s instead of 3s. Powered by steam (via brass pipe network). Does NOT need water input — it generates water. Best used alongside a boiler chain.',
         recipes: [{ in: {}, out: { 'water': 1 } }],
         renderAnim: Anim.wave('=', '#03a9f4')
     },
@@ -436,6 +449,7 @@ export const MACHINE_DEFS = {
         id: 'machine_brass_boiler', name: 'Brass Boiler', color: '#fbc02d',
         rotations: genRot4({ w: 3, h: 4, art: ["/B\\", "|~|", "|*|", "\\-/"], outX: 1, outY: 4 }, { w: 4, h: 3, art: ["/--\\", "*~B|", "\\--/"], outX: -1, outY: 1 }),
         energy: { type: 'burner', fuel: 'coal', usage: 1 }, processTime: 2.5,
+        wikiHints: 'Converts water into steam using coal. Has a 10% chance to produce boiler_scale as a byproduct (use soft_water to eliminate this chance). Central machine of the Stage 2 steam economy.',
         recipes: [{ in: { 'water': 1 }, out: { 'steam': 1 }, chanceOut: { item: 'boiler_scale', chance: 0.1 } }, { in: { 'soft_water': 1 }, out: { 'steam': 1 } }],
         renderAnim: Anim.fire('*')
     },
@@ -457,6 +471,7 @@ export const MACHINE_DEFS = {
         id: 'machine_pressure_vent', name: 'Pressure Relief Vent', color: '#78909c',
         rotations: genRot4({ w: 2, h: 2, art: ["/\\", "VV"], outX: null, outY: null }),
         energy: { type: 'none' }, processTime: 1.0,
+        wikiHints: 'Safety device — consumes and destroys excess steam. Does NOT output anything. Used to dump surplus steam from boilers and prevent pressure buildup in your network. Place at dead ends of brass pipe networks.',
         recipes: [{ in: { 'steam': 1 }, out: {} }],
         renderAnim: Anim.glow('V', 'v', '#e0f7fa')
     },
@@ -567,12 +582,14 @@ export const MACHINE_DEFS = {
     'machine_hub': {
         id: 'machine_hub', name: 'Central Hub', color: '#558b2f',
         rotations: [{ w: 3, h: 3, art: ["/H\\", "HHH", "\\H/"], outX: null, outY: null }],
-        energy: { type: 'none' }, maxStack: 10000
+        energy: { type: 'none' }, maxStack: 10000,
+        wikiHints: 'The player\'s home base machine. Acts as a large item storage chest (10,000 items). Indestructible — cannot be blown up by explosions. Place at the center of your base.'
     },
     'machine_storage_box': {
         id: 'machine_storage_box', name: 'Storage Box', color: '#795548',
         rotations: genRot4({ w: 4, h: 3, art: ["/--\\", "|  |", "\\v-/"], outX: 1, outY: 3 }, { w: 3, h: 4, art: ["/-\\", "< |", "| |", "\\-/"], outX: -1, outY: 1 }),
         energy: { type: 'none' }, maxStack: 2000,
+        wikiHints: 'Passive item storage — holds up to 2000 solid items and auto-outputs them via the item pipe port. Only accepts items that travel on item or item_heavy networks. NOT for fluids or gases.',
         acceptsItem: (m, itm) => getNetworkForItem(itm) === 'item' || getNetworkForItem(itm) === 'item_heavy',
         updateOverride: tankUpdate
     },
@@ -580,18 +597,21 @@ export const MACHINE_DEFS = {
         id: 'machine_liquid_tank', name: 'Liquid Tank', color: '#90caf9',
         rotations: genRot4({ w: 4, h: 4, art: ["/--\\", "|~~|", "|~~|", "\\v-/"], outX: 1, outY: 4 }),
         energy: { type: 'none' }, maxStack: 5000, acceptsItem: (m, itm) => acceptsTank(m, itm, ['water', 'lava']),
+        wikiHints: 'Fluid storage for water and lava (5000 units). Locks to the first fluid type inserted — cannot mix. Outputs via copper pipe (water) or iron pipe (lava).',
         updateOverride: tankUpdate
     },
     'machine_brass_gas_tank': {
         id: 'machine_brass_gas_tank', name: 'Brass Gas Tank', color: '#fbc02d',
         rotations: genRot4({ w: 4, h: 4, art: ["/--\\", "|**|", "|**|", "\\v-/"], outX: 1, outY: 4 }),
         energy: { type: 'none' }, maxStack: 5000, acceptsItem: (m, itm) => acceptsTank(m, itm, ['steam']),
+        wikiHints: 'Steam storage tank (5000 units). Only accepts steam via brass pipe network. Outputs steam via the same brass pipe. Use to buffer steam between boilers and consumers.',
         updateOverride: tankUpdate
     },
     'machine_glass_tank': {
         id: 'machine_glass_tank', name: 'Glass Gas Tank', color: '#b2ebf2',
         rotations: genRot4({ w: 4, h: 4, art: ["/--\\", "|OO|", "|OO|", "\\v-/"], outX: 1, outY: 4 }),
         energy: { type: 'none' }, maxStack: 5000,
+        wikiHints: 'Gas storage tank (5000 units). Accepts: oxygen, hydrogen, sulfur_dioxide, chlorine, unrefined_gas, petroleum_gas, nitrogen_gas. Locks to the first gas inserted. Uses glass pipe network.',
         acceptsItem: (m, itm) => acceptsTank(m, itm, ['oxygen', 'hydrogen', 'sulfur_dioxide', 'chlorine', 'unrefined_gas', 'petroleum_gas', 'nitrogen_gas']),
         updateOverride: tankUpdate
     },
@@ -599,6 +619,8 @@ export const MACHINE_DEFS = {
         id: 'machine_splitter', name: 'Splitter', color: '#009688',
         rotations: genRot4({ w: 1, h: 2, art: ["S", "s"], outX: 1, outY: 0, out2X: 1, out2Y: 1 }, { w: 2, h: 1, art: ["sS"], outX: 1, outY: 1, out2X: 0, out2Y: 1 }),
         energy: { type: 'none' }, maxStack: 5,
+        wikiHints: 'Splits items from a single input into two output ports. Has two physical output ports (primary and secondary). Can be configured with per-output item filters.',
+        behaviorNote: 'Default behavior: round-robin alternating between both outputs for unfiltered items. If output 1 has a filter, matching items go to port 1; non-matching go to port 2. If both outputs have filters, items matching neither are discarded.',
         updateOverride: function (m, r, dt) {
             m.splitToggle = m.splitToggle || false;
             for (let item in m.inv) {
@@ -624,6 +646,8 @@ export const MACHINE_DEFS = {
         id: 'machine_filter_pipe', name: 'Filter Item Pipe', color: '#424242',
         rotations: genRot4({ w: 1, h: 1, art: ["F"], outX: 1, outY: 0 }),
         energy: { type: 'none' }, maxStack: 5,
+        wikiHints: 'Item pipe with configurable whitelist or blacklist filter. Only passes items that match the configured filter to its output port. Non-matching items are held.',
+        behaviorNote: 'Right-click to configure filter items. Toggle blacklist mode to invert behavior (block listed items, pass everything else). Items not passing the filter remain in the pipe buffer until removed.',
         updateOverride: function (m, r, dt) {
             for (let item in m.inv) {
                 if (m.inv[item] > 0) {
@@ -709,6 +733,8 @@ export const MACHINE_DEFS = {
         id: 'machine_electrolyzer', name: 'Electrolyzer', color: '#00bcd4',
         rotations: genRot4({ w: 3, h: 3, art: ["/-\\", "+W-", "\\O/"], outX: 1, outY: 3, out2X: 3, out2Y: 1 }),
         energy: { type: 'electric', usage: 10 }, processTime: 2.0, recipes: [], // handled via override
+        wikiHints: 'Multi-mode electrolysis machine. Accepts 3 different fluid inputs and produces different gas pairs. Primary output port outputs the first product (O2 or Cl2). Secondary output port (right side) outputs the second product (H2 or deuterium).',
+        behaviorNote: 'Priority: brine > water > heavy_water. Mode 1 (brine): chlorine + hydrogen (x1). Mode 2 (water): oxygen + hydrogen (x2). Mode 3 (heavy_water): oxygen + deuterium (x2). All use 10 kJ per cycle at 2s process time.',
         recipes: [
             { in: { 'water': 1 }, out: { 'oxygen': 1 }, out2: { 'hydrogen': 2 } },
             { in: { 'brine': 1 }, out: { 'chlorine': 1 }, out2: { 'hydrogen': 1 } },
@@ -818,6 +844,8 @@ export const MACHINE_DEFS = {
         id: 'machine_pumpjack', name: 'Pumpjack', color: '#212121',
         rotations: genRot4({ w: 5, h: 3, art: ["/---\\", "| P |", "\\-v-/"], outX: 2, outY: 3 }, { w: 3, h: 5, art: ["/-\\", "< |", "|P|", "| |", "\\-/"], outX: -1, outY: 2 }),
         energy: { type: 'electric', usage: 10 }, processTime: 2.0,
+        resourceExtractor: true, placementRequirement: 'crude_oil',
+        wikiHints: 'Must be placed on a crude_oil tile. Extracts 1 crude_oil every 2s using 10 kJ of electric power per cycle. Outputs via steel pipe network. The start of the Stage 4 oil refining chain.',
         updateOverride: function (m, r, dt) {
             m.energy = m.energy || 0;
             if (m.energy >= 10 && m.oreType === 'crude_oil' && m.timer >= 2.0) {
@@ -949,6 +977,8 @@ export const MACHINE_DEFS = {
         id: 'machine_czochralski_puller', name: 'Czochralski Puller', color: '#455a64',
         rotations: genRot4({ w: 4, h: 6, art: ["/--\\", "|CZ|", "|CZ|", "|CZ|", "|CZ|", "\\-v/"], outX: 2, outY: 6 }, { w: 6, h: 4, art: ["/----\\", "<CCCC|", "|ZZZZ|", "\\----/"], outX: -1, outY: 1 }),
         energy: { type: 'electric', usage: 150 }, processTime: 10.0,
+        wikiHints: 'HEPA REQUIREMENT — will NOT operate without a HEPA Purifier within 6 tiles (13x13 cleanroom zone). Grows silicon crystal ingots from pure_silica. Part of the 7-stage silicon semiconductor pipeline (Stage 5).',
+        requirements: [{ type: 'proximity', machine: 'machine_hepa_purifier', radiusTiles: 6, description: 'Requires a HEPA Purifier within a 13x13 tile cleanroom zone (6 tile radius) to operate. Without it, the machine does nothing.' }],
         recipes: [{ in: { 'pure_silica': 4 }, out: { 'silicon_ingot': 1 } }],
         isWorking: function (m) { return m.hasHepa && ((m.energy || 0) >= 150) && ((m.inv['pure_silica'] || 0) >= 4); },
         updateOverride: function (m, r, dt) {
@@ -1013,6 +1043,9 @@ export const MACHINE_DEFS = {
         rotations: genRot4({ w: 6, h: 6, art: ["/----\\", "|LITH|", "|LITH|", "|LITH|", "|LITH|", "\\--v-/"], outX: 3, outY: 6 }),
         energy: { type: 'electric', usage: 500 }, processTime: 8.0,
         renderAnim: Anim.glow('I', 'i', '#ffd700'),
+        wikiHints: 'HEPA REQUIREMENT — will NOT operate without a HEPA Purifier within 6 tiles. Prints integrated circuits by applying a lithographic mask to a polished_silicon_wafer. Accepts 8 different mask types: cpu, gpu, rom, ram, ssd, power, clock, io. Input the correct mask + wafer to get the matching IC.',
+        requirements: [{ type: 'proximity', machine: 'machine_hepa_purifier', radiusTiles: 6, description: 'Requires a HEPA Purifier within a 13x13 tile cleanroom zone. Without it, the machine does nothing regardless of power and materials.' }],
+        behaviorNote: 'Scans inventory for any available mask type (cpu_mask, gpu_mask, etc.) and processes the first found. Output is the matching IC chip. Automatically selects recipe based on which mask is present.',
         // DUMMY RECIPES FOR AUTO-WIKI
         recipes: [
             { in: { 'polished_silicon_wafer': 1, 'cpu_mask': 1 }, out: { 'cpu_ic': 1 } }, { in: { 'polished_silicon_wafer': 1, 'gpu_mask': 1 }, out: { 'gpu_ic': 1 } },
@@ -1042,6 +1075,7 @@ export const MACHINE_DEFS = {
         id: 'machine_hepa_purifier', name: 'HEPA Air Purifier', color: '#00695c',
         rotations: genRot4({ w: 2, h: 2, art: ["HA", "PH"], outX: null, outY: null }),
         energy: { type: 'electric', usage: 50 }, processTime: 1.0,
+        wikiHints: 'Passive cleanroom enabler. Consumes 50 kJ/s to maintain a 13x13 tile HEPA zone. Does NOT produce items. Required by the Czochralski Puller and Lithographer — they will refuse to work if this is not within 6 tiles of them.',
         renderAnim: Anim.wave('H', '#00bcd4'),
         isWorking: function (m) { return (m.energy || 0) >= 50; },
         updateOverride: function (m, r, dt) { if (m.timer >= 1) { m.timer = 0; if (m.energy >= 50) m.energy -= 50; } }
@@ -2647,6 +2681,8 @@ export const MACHINE_DEFS = {
                 id: 'machine_primitive_plasma_tap', name: 'Primitive Plasma Tap', color: '#ff6d00',
                 rotations: genRot4({ w: 4, h: 4, art: ["/P-\\", "|TP|", "|~~|", "\\-v/"], outX: 1, outY: 4 }),
                 energy: { type: 'none' }, processTime: 3.0,
+                wikiHints: 'HAZARDOUS — Converts lava into raw_plasma. Subject to the plasma heat system: generates heat continuously, must be cooled with water (injected into input). If heat reaches 9500, triggers a Plasma Breach (10-tile explosion). Does NOT need stabilized_plasma for magnetic containment unlike other plasma machines.',
+                hazard: { type: 'explosion', trigger: 'Internal heat >= 9500 (insufficient water cooling)', severity: 2, radius: 10, description: 'Plasma Breach: destroys all machines and pipes within 10 tiles, deals 80 HP damage to nearby player.' },
                 recipes: [{ in: { lava: 1 }, out: { raw_plasma: 1 } }],
                 updateOverride(m, r, dt) {
                     plasmaTick(m, dt);
@@ -2668,6 +2704,8 @@ export const MACHINE_DEFS = {
     'machine_plasma_manifold': {
         recipes: [{ in: { 'raw_plasma': 2, 'water': 1 }, out: { 'stabilized_plasma': 1 }, out2: { 'plasma_slag': 1 } }],
                 id: 'machine_plasma_manifold', name: 'Plasma Manifold', color: '#ff9100',
+                wikiHints: 'HAZARDOUS — Converts raw_plasma + water into stabilized_plasma (secondary port outputs plasma_slag). Generates heat constantly. Requires water input for cooling AND stabilized_plasma in input for magnetic containment buffer (5s of safety per unit). If heat >= 9500, triggers a Plasma Breach explosion.',
+                hazard: { type: 'explosion', trigger: 'Internal heat >= 9500 (no water or no stabilized_plasma for containment)', severity: 2, radius: 10, description: 'Plasma Breach: destroys all machines and pipes within 10 tiles, deals 80 HP damage to nearby player.' },
                 rotations: [
                     {
                         w: 9, h: 9,
@@ -2754,6 +2792,8 @@ export const MACHINE_DEFS = {
                 id: 'machine_plasma_torch_furnace', name: 'Plasma Torch Furnace', color: '#bf360c',
                 rotations: genRot4({ w: 7, h: 7, art: ["/-----\\", "|T===P|", "|=====|", "|~~~~~|", "|=====|", "|T===P|", "\\--v--/"], outX: 3, outY: 7 }),
                 energy: { type: 'none' }, processTime: 5.0,
+                wikiHints: 'HAZARDOUS — Uses plasma (stabilized or raw) to smelt exotic high-temperature metals (tungsten, rhenium). Subject to the plasma heat system — must supply water for cooling and stabilized_plasma for containment buffer or risk Plasma Breach.',
+                hazard: { type: 'explosion', trigger: 'Internal heat >= 9500 (insufficient cooling)', severity: 2, radius: 10, description: 'Plasma Breach: destroys all machines and pipes within 10 tiles.' },
                 recipes: [
                     { in: { tungsten_ore: 2, stabilized_plasma: 1 }, out: { tungsten_ingot: 1 } },
                     { in: { rhenium_ore: 2, stabilized_plasma: 1 }, out: { rhenium_ingot: 1 } },
@@ -2843,6 +2883,7 @@ export const MACHINE_DEFS = {
     'machine_mhd_generator': {
         recipes: [{ in: { 'stabilized_plasma': 1 }, out: {} }],
                 id: 'machine_mhd_generator', name: 'MHD Generator', color: '#ff6d00',
+                wikiHints: 'POWER GENERATOR — does NOT output items. Consumes 1 stabilized_plasma per second to charge its energy buffer (+5,000,000 kJ per unit). Max buffer: 100,000,000 kJ. Provides ~50,000 kW to the power grid via SiCu cable or wire connection. Stage 7 tier power source.',
                 rotations: (() => {
                     const rot = {
                         w: 11, h: 11,
@@ -3016,6 +3057,14 @@ export const MACHINE_DEFS = {
     'machine_annihilation_reactor': {
         recipes: [{ in: { 'antimatter_cell': 1, 'matter_slug': 1 }, out: {} }],
         id: 'machine_annihilation_reactor', name: 'Annihilation Reactor', color: '#ff1744',
+        wikiHints: 'POWER GENERATOR + EXTREME HAZARD — does NOT output items. Annihilates 1 antimatter_cell + 1 matter_slug to produce 400,000,000 kJ per reaction. REQUIREMENTS: (1) Quantum Stabilizer within 7 tiles, (2) SiCu cables on perimeter, (3) all underlying tiles must be obsidian (tile ID 55), (4) Mega Transformers to distribute power. If Quantum Stabilizer goes offline, ontological index drains (15/s) and triggers Paradoxical Reality Collapse when it hits 0.',
+        requirements: [
+            { type: 'proximity', machine: 'machine_quantum_stabilizer', radiusTiles: 7, description: 'Quantum Stabilizer must be within 7 tiles and actively stabilizing. Without it, ontological index decays 15/s, triggering collapse at 0.' },
+            { type: 'connection', network: 'sicu', description: 'SiCu cables must be connected on the reactor perimeter (all 4 sides). Without SiCu, each annihilation triggers a Supernova instead of generating power.' },
+            { type: 'tile', tileId: 55, description: 'All tiles under the reactor must be obsidian (tile ID 55). Non-obsidian tiles trigger a Supernova on reaction.' },
+            { type: 'proximity', machine: 'machine_mega_transformer', description: 'Power is distributed only to Mega Transformers on the SiCu network. Normal power cables cannot carry this energy tier.' }
+        ],
+        hazard: { type: 'collapse', trigger: 'Quantum Stabilizer offline (ontological index <= 0) OR non-obsidian tile detected OR no SiCu connected', severity: 4, radius: 999, description: 'Paradoxical Reality Collapse — triggers triggerParadoxicalCollapse(). SiCu disconnected or non-obsidian tile triggers Supernova (150-tile radius) instead.' },
         rotations: [{
             w: 11, h: 11,
             art: [
@@ -3205,6 +3254,7 @@ export const MACHINE_DEFS = {
         ],
         energy: { type: 'none' },
         maxEnergy: 10000000,
+        wikiHints: 'CREATIVE MODE ONLY — Instantly fills its energy buffer to 10,000,000 kJ every tick. Infinite free power. Does NOT consume fuel or produce items. Only appears in the build menu during creative/sandbox mode.',
         updateOverride: function (m, r, dt) {
             m.energy = 10000000;
         },
@@ -3260,6 +3310,8 @@ export const MACHINE_DEFS = {
         id: 'machine_powered_industrial_miner', name: 'Powered Industrial Miner', color: '#b71c1c',
         rotations: genRot4({ w: 4, h: 4, art: ["/--\\", "|PM|", "|DH|", "\\-v/"], outX: 2, outY: 4 }),
         energy: { type: 'electric', usage: 100 }, processTime: 1.5,
+        resourceExtractor: true, placementRequirement: 'ore',
+        wikiHints: 'Electric-powered high-speed miner. Must be placed on an ore tile. Outputs 2 units of ore per cycle. Common ores: 1.5s cycle. Rare ores (tungsten, rhenium, lithium, titanium): 3.0s cycle. Costs 100 kJ per cycle.',
         updateOverride: function(m, r, dt) {
             m.energy = m.energy || 0; m.timer = m.timer || 0;
             m.timer += dt;

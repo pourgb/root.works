@@ -195,6 +195,8 @@ export class AgentController {
     }
 
     // Auto-Wiki API: Returns all recipes and machine definitions
+    // Enhanced to expose power generators, resource extractors, storage roles,
+    // chance outputs, dual outputs, hazards, requirements, and manual annotations.
     getAutoWiki() {
         let wiki = {
             handCrafting: [],
@@ -212,12 +214,75 @@ export class AgentController {
 
         if (window.MACHINE_DEFS) {
             for (const [id, def] of Object.entries(window.MACHINE_DEFS)) {
+                const recipes = def.recipes || [];
+
+                // Auto-detect: machine has recipe(s) with empty output AND has a maxEnergy buffer
+                // => it is a POWER GENERATOR (consumes fuel to charge the grid)
+                const isPowerGenerator = (def.maxEnergy !== undefined) &&
+                    recipes.some(r => r.out && Object.keys(r.out).length === 0);
+
+                // Auto-detect: updateOverride checks m.oreType => placement-dependent extractor
+                const overrideStr = def.updateOverride ? def.updateOverride.toString() : '';
+                const isResourceExtractor = !!(def.resourceExtractor ||
+                    overrideStr.includes('oreType') ||
+                    overrideStr.includes('crude_oil'));
+
+                // Auto-detect: maxStack > 500 with tankUpdate-style logic => storage
+                const isStorage = !!(def.maxStack && def.maxStack > 500);
+
                 wiki.machines[id] = {
+                    // ── Core identity ──────────────────────────────────────────────
                     name: def.name,
-                    energy: def.energy ? def.energy.type : 'none',
+                    size: def.rotations && def.rotations[0]
+                        ? { w: def.rotations[0].w, h: def.rotations[0].h }
+                        : { w: 1, h: 1 },
+
+                    // ── Energy ─────────────────────────────────────────────────────
+                    energyType: def.energy ? def.energy.type : 'none',
+                    energyUsage: def.energy ? (def.energy.usage || 0) : 0,
+                    fuelType: def.energy ? (def.energy.fuel || null) : null,
+                    maxEnergy: def.maxEnergy || null,
                     processTime: def.processTime || 0,
-                    recipes: def.recipes || [],
-                    size: def.rotations && def.rotations[0] ? { w: def.rotations[0].w, h: def.rotations[0].h } : { w: 1, h: 1 }
+
+                    // ── Recipes with full detail ────────────────────────────────────
+                    // Each recipe exposes: primary inputs/outputs, secondary port output,
+                    // and probabilistic chance outputs.
+                    recipes: recipes.map(r => ({
+                        in: r.in || {},
+                        out: r.out || {},
+                        out2: r.out2 || null,           // secondary output port items
+                        chanceOut: r.chanceOut || null, // { item, chance } random byproduct
+                    })),
+
+                    // ── Role classification (auto-detected) ─────────────────────────
+                    // isPowerGenerator: consumes fuel/items to charge an energy buffer.
+                    //   The wiki should say "outputs power" not "outputs nothing".
+                    isPowerGenerator: isPowerGenerator,
+
+                    // isResourceExtractor: produces items from the world tile it sits on.
+                    //   Must be placed on the correct tile type to function.
+                    isResourceExtractor: isResourceExtractor,
+                    placementRequirement: def.placementRequirement || null, // 'ore', 'crude_oil', 'any'
+
+                    // isStorage: holds items/fluids without processing them.
+                    isStorage: isStorage,
+                    maxStack: def.maxStack || null,
+
+                    // ── Manual annotations from machines.js ─────────────────────────
+                    // wikiHints: plain-text explanation of special or non-obvious behavior.
+                    wikiHints: def.wikiHints || null,
+
+                    // hazard: describes what happens if this machine is mismanaged.
+                    //   { type, trigger, severity (1-4), radius (tiles), description }
+                    hazard: def.hazard || null,
+
+                    // requirements: list of proximity or connection prerequisites.
+                    //   [{ type: 'proximity'|'connection', machine, network, radiusTiles, description }]
+                    requirements: def.requirements || null,
+
+                    // behaviorNote: human-readable description of multi-mode or override logic
+                    //   (e.g. greenhouse's 3-mode operation, augmentation chamber's player buff).
+                    behaviorNote: def.behaviorNote || null,
                 };
             }
         }
