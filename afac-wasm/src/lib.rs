@@ -325,6 +325,13 @@ impl GameState {
     pub fn set_machine_energy(&mut self, id: usize, energy: f32) {
         if let Some(m) = self.active_mut().machines.iter_mut().flatten().find(|m| m.active_id == id) { m.energy = energy; }
     }
+
+    pub fn update_machine_performance(&mut self, id: usize, process_time: f32, energy_usage: f32) {
+        if let Some(m) = self.active_mut().machines.iter_mut().flatten().find(|m| m.active_id == id) {
+            m.process_time = process_time;
+            m.energy_usage = energy_usage;
+        }
+    }
     
     pub fn overwrite_machine_inv(&mut self, id: usize, flat_inv: &[u32]) {
         if let Some(m) = self.active_mut().machines.iter_mut().flatten().find(|m| m.active_id == id) {
@@ -371,6 +378,29 @@ impl GameState {
             (m.timer / m.process_time).clamp(0.0, 1.0)
         }).unwrap_or(0.0)
     }
+
+    pub fn is_machine_working(&self, id: usize) -> bool {
+        self.active().machines.iter().flatten().find(|m| m.active_id == id).map(|m| {
+            if m.process_time <= 0.0 { return false; }
+            let mut has_power = true;
+            if m.is_electric {
+                if m.energy < m.energy_usage { has_power = false; }
+            } else if m.is_burner {
+                if m.get_inv(m.energy_fuel) < m.energy_usage as u32 { has_power = false; }
+            }
+            if !has_power { return false; }
+            
+            let mut can_craft = false;
+            for r in &m.recipes {
+                let mut recipe_ok = true;
+                for &(req_item, req_amt) in &r.in_items {
+                    if m.get_inv(req_item) < req_amt { recipe_ok = false; break; }
+                }
+                if recipe_ok { can_craft = true; break; }
+            }
+            can_craft
+        }).unwrap_or(false)
+    }
     
     pub fn dedupe_machine_out(&mut self, id: usize, item_id: u16, amt: u32, is_out2: bool) {
         if let Some(m) = self.active_mut().machines.iter_mut().flatten().find(|m| m.active_id == id) {
@@ -387,7 +417,6 @@ impl GameState {
         aw.machine_output_requests.clear();
         for m_opt in aw.machines.iter_mut() {
             if let Some(m) = m_opt {
-                m.timer += dt;
                 let mut has_power = true;
                 if m.is_electric {
                     if m.energy < m.energy_usage { has_power = false; }
@@ -395,14 +424,29 @@ impl GameState {
                     if m.get_inv(m.energy_fuel) < m.energy_usage as u32 { has_power = false; }
                 }
 
+                let mut can_craft = false;
+                for r in &m.recipes {
+                    let mut recipe_ok = true;
+                    for &(req_item, req_amt) in &r.in_items {
+                        if m.get_inv(req_item) < req_amt { recipe_ok = false; break; }
+                    }
+                    if recipe_ok { can_craft = true; break; }
+                }
+
+                if can_craft && has_power {
+                    m.timer += dt;
+                } else if !can_craft {
+                    m.timer = 0.0;
+                }
+
                 if has_power && m.timer >= m.process_time {
                     let mut valid_idx = None;
                     for (r_idx, r) in m.recipes.iter().enumerate() {
-                        let mut can_craft = true;
+                        let mut recipe_ok = true;
                         for &(req_item, req_amt) in &r.in_items {
-                            if m.get_inv(req_item) < req_amt { can_craft = false; break; }
+                            if m.get_inv(req_item) < req_amt { recipe_ok = false; break; }
                         }
-                        if can_craft { valid_idx = Some(r_idx); break; }
+                        if recipe_ok { valid_idx = Some(r_idx); break; }
                     }
                     if let Some(r_idx) = valid_idx {
                         m.timer = 0.0;

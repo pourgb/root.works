@@ -83,8 +83,11 @@ export function triggerPlasmaBreach(cx, cy) {
             if ((x - cx) * (x - cx) + (y - cy) * (y - cy) > radius * radius) continue;
             let idx = y * WORLD_SIZE + x;
             let tid = worldMap[idx];
-            if (tid >= 50000) toDestroy.add(tid - 50000);
-            worldMap[idx] = 1; // turn to floor
+            if (tid >= 50000) {
+                toDestroy.add(tid - 50000);
+            } else {
+                worldMap[idx] = 1; // turn to floor
+            }
             if (typeof NETWORKS !== 'undefined') {
                 for (let n of NETWORKS) { if (mapPipes[n]) mapPipes[n][idx] = 0; }
             }
@@ -95,13 +98,17 @@ export function triggerPlasmaBreach(cx, cy) {
         for (let mid of toDestroy) {
             let m = activeMachines[mid];
             if (m && m.type !== 'machine_hub') {
+                m.exploded = true;
+                m.disabledByPLC = true;
+                if (window.setMachineDisabledByPLC) {
+                    window.setMachineDisabledByPLC(m, true);
+                }
                 let r = m.def.rotations[m.rotIndex];
                 for (let my = 0; my < r.h; my++)
                     for (let mx = 0; mx < r.w; mx++) {
                         let idx = (m.y + my) * WORLD_SIZE + (m.x + mx);
-                        if (worldMap[idx] >= 50000) worldMap[idx] = 1;
+                        worldMap[idx] = 50000 + mid;
                     }
-                activeMachines[mid] = null;
             }
         }
     }
@@ -1336,6 +1343,7 @@ export const MACHINE_DEFS = {
                         if (nm.energy !== undefined) powerStored += nm.energy;
                         if (nm.def.energy && nm.def.energy.type === 'electric') powerDemand += (nm.def.energy.usage || 0);
                         if (nm.heat !== undefined) { machineHeat[nm.type] = nm.heat; totalHeat += nm.heat; }
+                        if (nm.overclockHeat !== undefined) totalHeat += nm.overclockHeat;
                         if (nm.type === 'machine_fusion_reactor' && nm.heat !== undefined) reactorHeat = nm.heat;
 
                         let isWorking = false;
@@ -1783,7 +1791,16 @@ export const MACHINE_DEFS = {
                                         m.currentValue = target.energy || 0;
                                     }
                                 } else if (key === 'heat' || key === 'temperature') {
-                                    m.currentValue = target.heat || 0;
+                                    m.currentValue = target.heat || target.overclockHeat || 0;
+                                } else if (key === 'overclockHeat') {
+                                    m.currentValue = target.overclockHeat || 0;
+                                } else if (key === 'overclockSpeed') {
+                                    m.currentValue = (target._ocSpeed || 1) > 1 ? target._ocSpeed : 0;
+                                } else if (key === 'overclockPower') {
+                                    let pwr = (target._ocPower || 1) * (1 - (target._ocEnergyReduction || 0));
+                                    m.currentValue = pwr > 1 ? pwr : 0;
+                                } else if (key === 'overclockActive') {
+                                    m.currentValue = (target._ocSpeed || 1) > 1 ? 1 : 0;
                                 } else if (key === 'timer' || key === 'progress') {
                                     if (target._isStandardWasm && typeof gameState !== 'undefined') {
                                         m.currentValue = gameState.get_machine_timer(target.id) || 0;
@@ -3243,7 +3260,6 @@ export const MACHINE_DEFS = {
         id: 'machine_powered_industrial_miner', name: 'Powered Industrial Miner', color: '#b71c1c',
         rotations: genRot4({ w: 4, h: 4, art: ["/--\\", "|PM|", "|DH|", "\\-v/"], outX: 2, outY: 4 }),
         energy: { type: 'electric', usage: 100 }, processTime: 1.5,
-        // Can mine all ores including rare ones: tungsten, rhenium, lithium, titanium
         updateOverride: function(m, r, dt) {
             m.energy = m.energy || 0; m.timer = m.timer || 0;
             m.timer += dt;
@@ -3264,6 +3280,51 @@ export const MACHINE_DEFS = {
             return null;
         },
         isWorking: function(m) { return m.oreType != null && (m.energy || 0) >= 100; }
+    },
+
+    // ═══════ OVERCLOCK INFRASTRUCTURE ═══════
+
+    'machine_power_delimiter_t1': {
+        id: 'machine_power_delimiter_t1', name: 'Power Delimiter T1', color: '#ff9100',
+        rotations: genRot4({ w: 2, h: 2, art: ["/\\", "DD"], outX: null, outY: null }),
+        energy: { type: 'electric', usage: 50 },
+        isOverclockBuff: true, ocSpeed: 1.25, ocPower: 1.5,
+        renderAnim: function(char, t) {
+            if (char === 'D') return { char: t === 0 ? 'D' : 'd', color: '#ffab40' };
+            return null;
+        }
+    },
+    'machine_power_delimiter_t2': {
+        id: 'machine_power_delimiter_t2', name: 'Power Delimiter T2', color: '#ff6d00',
+        rotations: genRot4({ w: 3, h: 3, art: ["/^-\\", "|D|", "\\v/"], outX: null, outY: null }),
+        energy: { type: 'electric', usage: 500, capacity: 2000 },
+        isOverclockBuff: true, ocSpeed: 1.5, ocPower: 3.0,
+        renderAnim: function(char, t) {
+            if (char === 'D') return { char: t === 0 ? 'D' : '8', color: '#ff9100' };
+            if (char === '^' || char === 'v') return { color: t === 0 ? '#ff6d00' : '#e65100' };
+            return null;
+        }
+    },
+    'machine_power_delimiter_t3': {
+        id: 'machine_power_delimiter_t3', name: 'Power Delimiter T3', color: '#e65100',
+        rotations: genRot4({ w: 3, h: 3, art: ["/0\\", "|D|", "\\v/"], outX: null, outY: null }),
+        energy: { type: 'electric', usage: 5000, capacity: 20000 },
+        isOverclockBuff: true, ocSpeed: 2.0, ocPower: 6.0,
+        renderAnim: function(char, t) {
+            if (char === 'D') return { char: t === 0 ? 'D' : '@', color: '#ff5722' };
+            if (char === '0') return { color: t === 0 ? '#ff1744' : '#ff9100' };
+            return null;
+        }
+    },
+    'machine_power_regulator': {
+        id: 'machine_power_regulator', name: 'Power Regulator', color: '#4fc3f7',
+        rotations: genRot4({ w: 2, h: 2, art: ["/\\", "RR"], outX: null, outY: null }),
+        energy: { type: 'electric', usage: 200 },
+        isOverclockBuff: true, ocEnergyReduction: 0.2,
+        renderAnim: function(char, t) {
+            if (char === 'R') return { char: t === 0 ? 'R' : 'r', color: '#81d4fa' };
+            return null;
+        }
     }
 };
 MACHINE_DEFS['machine_acid_leaching_vat'].recipes.push({
@@ -3531,7 +3592,13 @@ export const recipes = [
     { name: "Nuclear UHP Compressor", env: "table", output: { id: "machine_nuclear_uhp_compressor", amount: 1 }, input: { "steel_plate": 100, "invar_casing": 20, "invar_ingot": 30, "copper_wire": 50, "motor": 10, "titanium_hull_plate": 5 } },
     { name: "Diamond Blade", env: "table", output: { id: "diamond_blade", amount: 1 }, input: { "diamond_shard": 20 } },
     { name: "Steel Drillhead", env: "table", output: { id: "steel_drillhead", amount: 1 }, input: { "diamond_blade": 1, "steel_plate": 5, "motor": 2 } },
-    { name: "Powered Industrial Miner", env: "table", output: { id: "machine_powered_industrial_miner", amount: 1 }, input: { "steel_drillhead": 1, "machine_miner": 1, "steel_plate": 20, "motor": 5, "copper_wire": 10 } }
+    { name: "Powered Industrial Miner", env: "table", output: { id: "machine_powered_industrial_miner", amount: 1 }, input: { "steel_drillhead": 1, "machine_miner": 1, "steel_plate": 20, "motor": 5, "copper_wire": 10 } },
+
+    // --- OVERCLOCK INFRASTRUCTURE RECIPES ---
+    { name: "Power Delimiter T1", env: "table", output: { id: "power_delimiter_t1", amount: 1 }, input: { "bronze_casing": 2, "copper_wire": 10, "iron_plate": 5 } },
+    { name: "Power Delimiter T2", env: "table", output: { id: "power_delimiter_t2", amount: 1 }, input: { "invar_casing": 2, "compute_module": 2, "steel_plate": 10 } },
+    { name: "Power Delimiter T3", env: "table", output: { id: "power_delimiter_t3", amount: 1 }, input: { "quantum_circuit": 2, "plasma_composite_plate": 4, "stabilized_plasma": 1 } },
+    { name: "Power Regulator", env: "table", output: { id: "power_regulator", amount: 1 }, input: { "invar_casing": 1, "crystal_lens": 2, "copper_wire": 20 } }
 ];
 
 // ═══════ BUILD MENU CATEGORIES ═══════
@@ -3736,8 +3803,11 @@ export function triggerNuclearExplosion(cx, cy) {
             if (dist <= radius) {
                 let idx = y * WORLD_SIZE + x;
                 let tId = worldMap[idx];
-                if (tId >= 50000) machinesToDestroy.add(tId - 50000);
-                worldMap[idx] = 1;
+                if (tId >= 50000) {
+                    machinesToDestroy.add(tId - 50000);
+                } else {
+                    worldMap[idx] = 1;
+                }
                 for (let n of NETWORKS) { if (mapPipes[n]) mapPipes[n][idx] = 0; }
                 hasPipeMap[idx] = 0;
             }
@@ -3746,14 +3816,18 @@ export function triggerNuclearExplosion(cx, cy) {
     for (let mId of machinesToDestroy) {
         let m = activeMachines[mId];
         if (m && m.type !== 'machine_hub') {
+            m.exploded = true;
+            m.disabledByPLC = true;
+            if (window.setMachineDisabledByPLC) {
+                window.setMachineDisabledByPLC(m, true);
+            }
             let r = m.def.rotations[m.rotIndex];
             for (let my = 0; my < r.h; my++) {
                 for (let mx = 0; mx < r.w; mx++) {
                     let idx = (m.y + my) * WORLD_SIZE + (m.x + mx);
-                    if (worldMap[idx] >= 50000) worldMap[idx] = 1;
+                    worldMap[idx] = 50000 + mId;
                 }
             }
-            activeMachines[mId] = null;
         }
     }
     if (window.gameState?.clear_belt_items_in_radius) window.gameState.clear_belt_items_in_radius(cx, cy, radius);
@@ -3781,8 +3855,11 @@ export function triggerSupernova(cx, cy) {
             if (dist <= radius) {
                 let idx = y * WORLD_SIZE + x;
                 let tId = worldMap[idx];
-                if (tId >= 50000) machinesToDestroy.add(tId - 50000);
-                worldMap[idx] = (Math.random() > 0.5) ? 1 : 43;
+                if (tId >= 50000) {
+                    machinesToDestroy.add(tId - 50000);
+                } else {
+                    worldMap[idx] = (Math.random() > 0.5) ? 1 : 43;
+                }
                 for (let n of NETWORKS) { if (mapPipes[n]) mapPipes[n][idx] = 0; }
                 hasPipeMap[idx] = 0;
             }
@@ -3791,14 +3868,18 @@ export function triggerSupernova(cx, cy) {
     for (let mId of machinesToDestroy) {
         let m = activeMachines[mId];
         if (m && m.type !== 'machine_hub') {
+            m.exploded = true;
+            m.disabledByPLC = true;
+            if (window.setMachineDisabledByPLC) {
+                window.setMachineDisabledByPLC(m, true);
+            }
             let r = m.def.rotations[m.rotIndex];
             for (let my = 0; my < r.h; my++) {
                 for (let mx = 0; mx < r.w; mx++) {
                     let idx = (m.y + my) * WORLD_SIZE + (m.x + mx);
-                    if (worldMap[idx] >= 50000) worldMap[idx] = 1;
+                    worldMap[idx] = 50000 + mId;
                 }
             }
-            activeMachines[mId] = null;
         }
     }
     if (window.gameState?.clear_belt_items_in_radius) window.gameState.clear_belt_items_in_radius(cx, cy, radius);

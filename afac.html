@@ -1205,6 +1205,49 @@
             return null;
         }
 
+        function isInOverclockRange(delim, m) {
+            // Use AABB nearest-point distance so large machines (4x4, 5x5 etc.) aren't
+            // unfairly pushed outside range when sitting right next to a delimiter.
+            let dr = delim.def.rotations[delim.rotIndex];
+            let mr = m.def.rotations[m.rotIndex];
+            let dLeft = delim.x, dRight = delim.x + (dr.w || 1) - 1;
+            let dTop  = delim.y, dBot  = delim.y + (dr.h || 1) - 1;
+            let mLeft = m.x,     mRight = m.x + (mr.w || 1) - 1;
+            let mTop  = m.y,     mBot  = m.y + (mr.h || 1) - 1;
+            // Closest tile distance between the two AABBs
+            let distX = Math.max(0, mLeft > dRight ? mLeft - dRight : dLeft > mRight ? dLeft - mRight : 0);
+            let distY = Math.max(0, mTop  > dBot   ? mTop  - dBot   : dTop  > mBot   ? dTop  - mBot   : 0);
+            return Math.max(distX, distY) <= 3;
+        }
+
+        function findBuffTargetsForDelimiter(delim) {
+            let targets = [];
+            for (let m of activeMachines) {
+                if (!m || !m._isElectric || m.def.isOverclockBuff || m === delim) continue;
+                if (!m._compiled) precompileMachine(m);
+                if (isInOverclockRange(delim, m)) targets.push(m);
+            }
+            return targets;
+        }
+
+        function invalidateOverclockNeighbors(ox, oy, ow, oh) {
+            let dLeft = ox, dRight = ox + (ow || 1) - 1;
+            let dTop  = oy, dBot  = oy + (oh || 1) - 1;
+            for (let m of activeMachines) {
+                if (!m || !m._isElectric || m.def.isOverclockBuff) continue;
+                let mr = m.def.rotations[m.rotIndex];
+                let mLeft = m.x, mRight = m.x + (mr.w || 1) - 1;
+                let mTop  = m.y, mBot  = m.y + (mr.h || 1) - 1;
+                let distX = Math.max(0, mLeft > dRight ? mLeft - dRight : dLeft > mRight ? dLeft - mRight : 0);
+                let distY = Math.max(0, mTop  > dBot   ? mTop  - dBot   : dTop  > mBot   ? dTop  - mBot   : 0);
+                if (Math.max(distX, distY) <= 3) {
+                    m._compiled = false;
+                    m._ocSpeed = 1; m._ocPower = 1; m._ocEnergyReduction = 0;
+                    delete m._effectiveProcessTime; delete m._effectiveEnergyUsage;
+                }
+            }
+        }
+
         function placeMachineAt(px, py) {
             if (creativeMode || inventory[placingItem.id] > 0) {
                 let mDef = MACHINE_DEFS[placingItem.id]; let rDef = mDef.rotations[placingItem.rot % mDef.rotations.length]; let w = rDef.w, h = rDef.h; let valid = true, u = new Uint16Array(w * h), oreT = null, oreC = 0;
@@ -1319,6 +1362,7 @@
                     let r = m.def.rotations[m.rotIndex];
                     for (let y = 0; y < r.h; y++) for (let x = 0; x < r.w; x++) worldMap[(m.y + y) * WORLD_SIZE + (m.x + x)] = m.underlying[y * r.w + x];
                     activeMachines[mId] = null; floatText(px, py, "Picked up " + m.type, "#fff");
+                    if (m.def.isOverclockBuff) invalidateOverclockNeighbors(m.x, m.y, r.w, r.h);
                     updateHepaNetwork(); powerGridNeedsUpdate = true; dataGridNeedsUpdate = true;
                     if (ws && ws.readyState === 1 && !window.isRemoteAction) ws.send(JSON.stringify({ type: 'mine_block', x: px, y: py, layer: 'machine' }));
                 }
@@ -2489,6 +2533,25 @@
             updateHUD();
         }
 
+        function computeOverclockBuffs(m) {
+            let ocSpeed = 1, ocPower = 1, ocEnergyReduction = 0;
+            let buffCount = 0;
+            for (let buffM of activeMachines) {
+                if (buffCount >= 4) break;
+                if (!buffM || buffM === m || !buffM.def) continue;
+                if (!buffM.def.isOverclockBuff) continue;
+                if (!isInOverclockRange(buffM, m)) continue;
+                if (!buffM._compiled) precompileMachine(buffM);
+                if ((buffM.energy || 0) < (buffM._energyUsage || 0)) continue;
+                if (buffM.def.ocSpeed) { ocSpeed *= buffM.def.ocSpeed; ocPower *= buffM.def.ocPower; }
+                if (buffM.def.ocEnergyReduction) ocEnergyReduction = Math.min(ocEnergyReduction + buffM.def.ocEnergyReduction, 0.8);
+                buffCount++;
+            }
+            m._ocSpeed = ocSpeed;
+            m._ocPower = ocPower;
+            m._ocEnergyReduction = ocEnergyReduction;
+        }
+
         function precompileMachine(m) {
             if (m._compiled) return;
             m._isElectric = m.def.energy && m.def.energy.type === 'electric';
@@ -2496,6 +2559,16 @@
             m._energyFuel = m._isBurner ? m.def.energy.fuel : null;
             m._energyUsage = m.def.energy ? m.def.energy.usage || 0 : 0;
             m._hasEnergy = m.def.energy !== undefined && m.def.energy.type !== 'none';
+
+            if (m._isElectric && !m.def.isOverclockBuff) {
+                computeOverclockBuffs(m);
+                m._effectiveProcessTime = (m.def.processTime || 1) / m._ocSpeed;
+                m._effectiveEnergyUsage = m._energyUsage * m._ocPower * (1 - m._ocEnergyReduction);
+            } else {
+                m._ocSpeed = 1; m._ocPower = 1; m._ocEnergyReduction = 0;
+                m._effectiveProcessTime = m.def.processTime || 1;
+                m._effectiveEnergyUsage = m._energyUsage;
+            }
 
             if (m.def.recipes) {
                 m._fastRecipes = m.def.recipes.map(r => ({
@@ -2542,29 +2615,37 @@
                 let flatPorts = []; for (let p of m._outPorts) { flatPorts.push(p.x, p.y); }
                 let flatOut2 = []; for (let p of m._out2Ports) { flatOut2.push(p.x, p.y); }
 
-                let energyUsage = m._energyUsage || 0;
+                let energyUsage = (m._effectiveEnergyUsage !== undefined ? m._effectiveEnergyUsage : (m._energyUsage || 0));
                 let maxEnergy = m.def.energy ? m.def.energy.capacity || (m.def.energy.storage ? 80000 : 1000) : 0;
                 let fuelId = m._isBurner ? (ITEM_TO_ID[m.def.energy.fuel] || 0) : 0;
 
-                gameState.register_standard_machine(
-                    m.id, m.x, m.y,
-                    m.disabledByPLC ? 999999999 : (m.def.processTime || 1),
-                    !!m._isElectric, !!m._isBurner, fuelId, energyUsage, maxEnergy,
-                    new Float32Array(flatRecipes), new Uint16Array(flatPorts), new Uint16Array(flatOut2)
-                );
-                m._isStandardWasm = true;
+                if (m._isStandardWasm) {
+                    gameState.update_machine_performance(
+                        m.id,
+                        m.disabledByPLC ? 999999999 : (m._effectiveProcessTime || m.def.processTime || 1),
+                        energyUsage
+                    );
+                } else {
+                    gameState.register_standard_machine(
+                        m.id, m.x, m.y,
+                        m.disabledByPLC ? 999999999 : (m._effectiveProcessTime || m.def.processTime || 1),
+                        !!m._isElectric, !!m._isBurner, fuelId, energyUsage, maxEnergy,
+                        new Float32Array(flatRecipes), new Uint16Array(flatPorts), new Uint16Array(flatOut2)
+                    );
+                    m._isStandardWasm = true;
 
-                // If it was already loaded from save, sync existing inv/out arrays over.
-                if (m.inv || m.outBuffer) {
-                    let iv = []; for (let k in m.inv) { iv.push(ITEM_TO_ID[k], m.inv[k]); }
-                    gameState.overwrite_machine_inv(m.id, new Uint32Array(iv));
-                    let ov = []; for (let k in m.outBuffer) { ov.push(ITEM_TO_ID[k], m.outBuffer[k]); }
-                    gameState.overwrite_machine_out(m.id, new Uint32Array(ov), false);
-                    if (m.out2Buffer) {
-                        let ov2 = []; for (let k in m.out2Buffer) { ov2.push(ITEM_TO_ID[k], m.out2Buffer[k]); }
-                        gameState.overwrite_machine_out(m.id, new Uint32Array(ov2), true);
+                    // If it was already loaded from save, sync existing inv/out arrays over.
+                    if (m.inv || m.outBuffer) {
+                        let iv = []; for (let k in m.inv) { iv.push(ITEM_TO_ID[k], m.inv[k]); }
+                        gameState.overwrite_machine_inv(m.id, new Uint32Array(iv));
+                        let ov = []; for (let k in m.outBuffer) { ov.push(ITEM_TO_ID[k], m.outBuffer[k]); }
+                        gameState.overwrite_machine_out(m.id, new Uint32Array(ov), false);
+                        if (m.out2Buffer) {
+                            let ov2 = []; for (let k in m.out2Buffer) { ov2.push(ITEM_TO_ID[k], m.out2Buffer[k]); }
+                            gameState.overwrite_machine_out(m.id, new Uint32Array(ov2), true);
+                        }
+                        if (m.energy !== undefined) gameState.set_machine_energy(m.id, m.energy);
                     }
-                    if (m.energy !== undefined) gameState.set_machine_energy(m.id, m.energy);
                 }
             }
 
@@ -2595,6 +2676,7 @@
         window.syncMachineFromWasm = syncMachineFromWasm;
 
         function setMachineDisabledByPLC(m, disabled) {
+            if (m.exploded) disabled = true;
             if (!!m.disabledByPLC === !!disabled) return;
             if (m._isStandardWasm) {
                 syncMachineFromWasm(m);
@@ -2621,16 +2703,19 @@
             for (let q of placementQueue) {
                 if (q.type === 'machine') {
                     let nId = activeMachines.findIndex(m => m === null); if (nId === -1) nId = activeMachines.length;
+                    let initEnergy = q.mDef.isOverclockBuff ? (q.mDef.energy.capacity || 1000) : undefined;
                     let newMachine = {
                         id: nId, type: q.id, def: q.mDef, rotIndex: q.rotIndex,
                         x: q.px, y: q.py, timer: 0, underlying: q.u,
-                        oreType: q.oreType, oreCount: q.oreCount, inv: {}, outBuffer: {}
+                        oreType: q.oreType, oreCount: q.oreCount, inv: {}, outBuffer: {},
+                        energy: initEnergy
                     };
                     precompileMachine(newMachine);
                     activeMachines[nId] = newMachine;
                     for (let y = 0; y < q.rDef.h; y++) {
                         for (let x = 0; x < q.rDef.w; x++) worldMap[(q.py + y) * WORLD_SIZE + (q.px + x)] = 50000 + nId;
                     }
+                    if (q.mDef.isOverclockBuff) invalidateOverclockNeighbors(q.px, q.py, q.rDef.w, q.rDef.h);
                     triggeredUpdate = true;
                 } else if (q.type === 'logistics') {
                     mapPipes[q.network][q.py * WORLD_SIZE + q.px] = q.sId + 1;
@@ -2822,7 +2907,7 @@
 
         function isPosOnMachine(m, px, py) { let r = m.def.rotations[m.rotIndex]; return (px >= m.x && px < m.x + r.w && py >= m.y && py < m.y + r.h); }
         function updateHepaNetwork() {
-            let hepas = activeMachines.filter(m => m && m.type === 'machine_hepa_purifier');
+            let hepas = activeMachines.filter(m => m && m.type === 'machine_hepa_purifier' && !m.exploded);
             for (let m of activeMachines) {
                 if (!m) continue;
                 if (m.type === 'machine_czochralski_puller' || m.type === 'machine_lithographer') {
@@ -3279,7 +3364,9 @@
 
             // Active Recipe Status
             const recDiv = document.getElementById('machine-active-recipe');
-            if (currentOpenMachine.type === 'machine_fission_reactor') {
+            if (currentOpenMachine.exploded) {
+                recDiv.innerHTML = `<strong style="color:#ff1744; font-size:16px;">💥 MACHINE EXPLODED 💥</strong><br><em style="color:#aaa;">This machine has sustained catastrophic damage and cannot be repaired.</em>`;
+            } else if (currentOpenMachine.type === 'machine_fission_reactor') {
                 let heatPct = Math.min(100, ((currentOpenMachine.heat || 0) / 10000) * 100);
                 let heatColor = heatPct < 50 ? '#4caf50' : (heatPct < 85 ? '#ff9800' : '#f44336');
                 let status = currentOpenMachine.disabledByPLC ? "DISABLED BY PLC" : ((currentOpenMachine.fuelTime > 0) ? "BURNING FUEL" : "IDLE");
@@ -3392,6 +3479,19 @@ let p = Math.floor(progressRatio * 100);
             </div>
             <em style="color:#f44336; font-size:11px; font-weight:bold;">Manual insertion disabled.<br>Use Import Uplinks to push items in.</em>
         `;
+            } else if (currentOpenMachine.def.isOverclockBuff) {
+                if (!currentOpenMachine._compiled) precompileMachine(currentOpenMachine);
+                let targets = findBuffTargetsForDelimiter(currentOpenMachine);
+                let hasPower = (currentOpenMachine.energy || 0) >= (currentOpenMachine._energyUsage || 0);
+                let powerColor = hasPower ? '#4caf50' : '#f44336';
+                let targetsHtml = targets.length === 0
+                    ? '<span style="color:#ff9800;">No machines in range.</span>'
+                    : targets.map(t => `<span style="color:#fff;">${t.def.name} (${t.x}, ${t.y})</span>`).join('<br>');
+                recDiv.innerHTML = `
+            <strong>Overclock Status: <span style="color:${powerColor};">${hasPower ? 'POWERED' : 'NO POWER'}</span></strong><br>
+            <span style="color:#aaa;font-size:11px;">${currentOpenMachine.def.ocSpeed ? 'Speed: ' + currentOpenMachine.def.ocSpeed + 'x | Power: ' + currentOpenMachine.def.ocPower + 'x' : 'Energy Reduction: -' + (currentOpenMachine.def.ocEnergyReduction * 100) + '%'}</span><br>
+            <strong style="color:#ff9800;margin-top:4px;display:inline-block;">Targets:</strong><br>${targetsHtml}
+            <br><button onclick="rescanOverclockDelimiter()" style="margin-top:6px;padding:4px 12px;background:#ff9800;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:12px;">Re-scan Neighbors</button>`;
             } else if (currentOpenMachine.def.recipes && currentOpenMachine.def.recipes.length > 0) {
                 let activeRec = null;
                 for (let r of currentOpenMachine.def.recipes) {
@@ -3406,6 +3506,22 @@ let p = Math.floor(progressRatio * 100);
                     recDiv.innerHTML = `<strong>Processing:</strong><br>${Object.keys(activeRec.out).map(k => k.replace(/_/g, ' ')).join(', ')}<br>Progress: ${Math.min(100, p)}%`;
                 } else {
                     recDiv.innerHTML = `<em style="color:#d32f2f;">Waiting for ingredients/power...</em>`;
+                }
+                if (currentOpenMachine._isElectric && !currentOpenMachine.def.isOverclockBuff) {
+                    if (!currentOpenMachine._compiled) precompileMachine(currentOpenMachine);
+                    let ocLine = '';
+                    if ((currentOpenMachine._ocSpeed || 1) > 1 || currentOpenMachine._ocEnergyReduction > 0) {
+                        ocLine = `<br><span style="color:#ff9800;font-size:11px;">OC: ${currentOpenMachine._ocSpeed.toFixed(2)}x speed, ${(currentOpenMachine._ocPower * (1 - currentOpenMachine._ocEnergyReduction)).toFixed(2)}x power</span>`;
+                    }
+                    let heatLine = '';
+                    if (currentOpenMachine.overclockHeat) {
+                        let heat = currentOpenMachine.overclockHeat;
+                        let maxH = 1000;
+                        let hp = Math.min(100, (heat / maxH) * 100);
+                        let hc = hp < 50 ? '#4caf50' : (hp < 80 ? '#ff9800' : '#f44336');
+                        heatLine = `<br><span style="color:#aaa;font-size:11px;">Heat: </span><span style="color:${hc};font-weight:bold;">${Math.floor(heat)}/${maxH}</span><div style="background:#555;height:4px;width:100%;margin-top:2px;"><div style="background:${hc};height:100%;width:${hp}%;"></div></div>`;
+                    }
+                    recDiv.innerHTML += ocLine + heatLine;
                 }
             } else {
                 recDiv.innerHTML = `<em>N/A</em>`;
@@ -3708,7 +3824,7 @@ let p = Math.floor(progressRatio * 100);
             'Chemistry': { color: '#00695c', machines: ['machine_bronze_crusher', 'machine_bronze_mill', 'machine_bronze_washer', 'machine_bronze_roaster', 'machine_slurry_vat', 'machine_slurry_centrifuge', 'machine_slurry_filter_press', 'machine_flotation_cell', 'machine_magnetic_separator', 'machine_acid_bath', 'machine_acid_leaching_vat', 'machine_sulfuric_scrubber', 'machine_chemical_mixer', 'machine_chemical_oxidizer', 'machine_catalytic_reactor', 'machine_blast_roaster', 'machine_tar_mixer', 'machine_graphitizer', 'machine_coal_mixer', 'machine_thermal_desorber', 'machine_vacuum_calciner', 'machine_yellowcake_precipitator', 'machine_arc_purifier', 'machine_asphalt_mixer'] },
             'Oil & Gas': { color: '#f9a825', machines: ['machine_heavy_tower', 'machine_light_tower', 'machine_gas_tower', 'machine_naphtha_cracker', 'machine_polymerizer', 'machine_centrifuge_oil', 'machine_electrolyzer', 'machine_cooling_tower', 'machine_heat_exchanger', 'machine_brass_boiler'] },
             'Electronics': { color: '#1565c0', machines: ['machine_wafer_saw', 'machine_wafer_polisher', 'machine_czochralski_puller', 'machine_lens_caster', 'machine_optical_grinder', 'machine_lithographer', 'machine_fuel_rod_assembler', 'machine_ion_separator', 'machine_isotope_pulverizer', 'machine_fluorination_gasifier', 'machine_particle_collider'] },
-            'Power': { color: '#f57c00', machines: ['machine_generator', 'machine_gas_generator', 'machine_steam_turbine', 'machine_mega_transformer', 'machine_battery_lead', 'machine_fission_reactor', 'machine_fusion_reactor', 'machine_fusion_charger'] },
+            'Power': { color: '#f57c00', machines: ['machine_generator', 'machine_gas_generator', 'machine_steam_turbine', 'machine_mega_transformer', 'machine_battery_lead', 'machine_fission_reactor', 'machine_fusion_reactor', 'machine_fusion_charger', 'machine_power_delimiter_t1', 'machine_power_delimiter_t2', 'machine_power_delimiter_t3', 'machine_power_regulator'] },
             'Storage': { color: '#37474f', machines: ['machine_storage_box', 'machine_liquid_tank', 'machine_brass_gas_tank', 'machine_glass_tank', 'machine_waste_storage'] },
             'Routing': { color: '#0277bd', machines: ['machine_splitter', 'machine_filter_pipe', 'machine_drone_station_carrier', 'machine_drone_station_farming', 'machine_drone_input', 'machine_drone_output', 'machine_brass_pump', 'machine_coal_pump', 'machine_heavy_pump'] },
             'Defense': { color: '#b71c1c', machines: ['machine_slug_turret', 'machine_chain_gunner', 'machine_defense_node', 'machine_defense_radar'] },
@@ -4125,27 +4241,30 @@ let p = Math.floor(progressRatio * 100);
                         let idx = y * WORLD_SIZE + x;
                         let tId = worldMap[idx];
 
-                        if (tId >= 50000) machinesToDestroy.add(tId - 50000); // Mark machine
-
-                        worldMap[idx] = 1; // turn to barren ground
+                        if (tId >= 50000) {
+                            machinesToDestroy.add(tId - 50000);
+                        } else {
+                            worldMap[idx] = 1; // turn to barren ground
+                        }
                         for (let n of NETWORKS) { if (mapPipes[n]) mapPipes[n][idx] = 0; }
                         hasPipeMap[idx] = 0;
                     }
                 }
             }
 
-            // Second pass: completely wipe all tiles of destroyed machines
+            // Second pass: mark machines as exploded
             for (let mId of machinesToDestroy) {
                 let m = activeMachines[mId];
                 if (m && m.type !== 'machine_hub') {
+                    m.exploded = true;
+                    setMachineDisabledByPLC(m, true);
                     let r = m.def.rotations[m.rotIndex];
                     for (let my = 0; my < r.h; my++) {
                         for (let mx = 0; mx < r.w; mx++) {
                             let idx = (m.y + my) * WORLD_SIZE + (m.x + mx);
-                            if (worldMap[idx] >= 50000) worldMap[idx] = 1; // Wipe stray tiles
+                            worldMap[idx] = 50000 + mId;
                         }
                     }
-                    activeMachines[mId] = null;
                 }
             }
 
@@ -4181,9 +4300,11 @@ let p = Math.floor(progressRatio * 100);
                     if (dist <= radius) {
                         let idx = y * WORLD_SIZE + x;
                         let tId = worldMap[idx];
-                        if (tId >= 50000) machinesToDestroy.add(tId - 50000);
-
-                        worldMap[idx] = (Math.random() > 0.5) ? 1 : 43; // Turn into scorched earth/glass
+                        if (tId >= 50000) {
+                            machinesToDestroy.add(tId - 50000);
+                        } else {
+                            worldMap[idx] = (Math.random() > 0.5) ? 1 : 43; // Turn into scorched earth/glass
+                        }
                         for (let n of NETWORKS) { if (mapPipes[n]) mapPipes[n][idx] = 0; }
                         hasPipeMap[idx] = 0;
                     }
@@ -4193,14 +4314,15 @@ let p = Math.floor(progressRatio * 100);
             for (let mId of machinesToDestroy) {
                 let m = activeMachines[mId];
                 if (m && m.type !== 'machine_hub') {
+                    m.exploded = true;
+                    setMachineDisabledByPLC(m, true);
                     let r = m.def.rotations[m.rotIndex];
                     for (let my = 0; my < r.h; my++) {
                         for (let mx = 0; mx < r.w; mx++) {
                             let idx = (m.y + my) * WORLD_SIZE + (m.x + mx);
-                            if (worldMap[idx] >= 50000) worldMap[idx] = 1;
+                            worldMap[idx] = 50000 + mId;
                         }
                     }
-                    activeMachines[mId] = null;
                 }
             }
 
@@ -4459,12 +4581,13 @@ let p = Math.floor(progressRatio * 100);
         }
 
         let generatorTick = 0;
+        let ocHeatTimer = 0;
 
         function rebuildPowerGrids() {
             let machineTypes = new Uint8Array(activeMachines.length);
             for (let i = 0; i < activeMachines.length; i++) {
                 let m = activeMachines[i];
-                if (!m) continue;
+                if (!m || m.exploded) continue;
                 if (m.def.energy && m.def.energy.storage) machineTypes[i] = 3; // Battery
                 else if (m.type === 'machine_mega_transformer') machineTypes[i] = 4; // Transformer
                 // Fix: Include reactors in the generator type check (type 1)
@@ -4617,7 +4740,7 @@ let p = Math.floor(progressRatio * 100);
             let dataNodes = [];
             for (let i = 0; i < activeMachines.length; i++) {
                 let m = activeMachines[i];
-                if (!m) continue;
+                if (!m || m.exploded) continue;
 
                 let mType = 5; // Include ALL machines in data network mapping, rather than just 0 which breaks rust BFS connections
                 if (m.type === 'machine_cdh') mType = 1;
@@ -4748,7 +4871,7 @@ let p = Math.floor(progressRatio * 100);
                     let mId = worldMap[my * WORLD_SIZE + mx] - 50000;
                     let nm = activeMachines[mId];
 
-                    if (nm) {
+                    if (nm && !nm.exploded) {
                         if (nm._isStandardWasm) {
                             // WASM machine: inventory lives in Rust, must use insert_machine_item nyan!
                             // Query Rust for the current amount of this item to enforce maxStack cap.
@@ -4817,19 +4940,44 @@ let p = Math.floor(progressRatio * 100);
                 m.timer += dt;
 
                 if (m.def.updateOverride) {
+                    // Override machines: make effective energy values available
+                    if (m._isElectric) {
+                        m._ocSpeed = m._ocSpeed || 1;
+                    }
                     m.def.updateOverride(m, m.def.rotations[m.rotIndex], dt);
+                } else if (m.def.isOverclockBuff && m._isElectric) {
+                    let isActive = (m.energy || 0) >= (m._energyUsage || 0);
+                    if (m._ocActive === undefined) m._ocActive = isActive;
+                    if (m._ocActive !== isActive) {
+                        m._ocActive = isActive;
+                        let r = m.def.rotations[m.rotIndex];
+                        invalidateOverclockNeighbors(m.x, m.y, r.w, r.h);
+                    }
+                    if (isActive) {
+                        let cx = m.x + Math.floor((m.def.rotations[m.rotIndex].w || 1) / 2);
+                        let cy = m.y + Math.floor((m.def.rotations[m.rotIndex].h || 1) / 2);
+                        let hasTarget = false;
+                        for (let tm of activeMachines) {
+                            if (!tm || !tm._isElectric || tm.def.isOverclockBuff || tm === m) continue;
+                            let tmcx = tm.x + Math.floor((tm.def.rotations[tm.rotIndex].w || 1) / 2);
+                            let tmcy = tm.y + Math.floor((tm.def.rotations[tm.rotIndex].h || 1) / 2);
+                            if (Math.abs(tmcx - cx) <= 3 && Math.abs(tmcy - cy) <= 3) { hasTarget = true; break; }
+                        }
+                        if (hasTarget) m.energy = Math.max(0, (m.energy || 0) - (m._energyUsage || 0) * dt);
+                    }
                 } else if (m._fastRecipes) {
                     let hasPower = true;
+                    let effEnergy = (m._effectiveEnergyUsage !== undefined ? m._effectiveEnergyUsage : m._energyUsage);
+                    let effProcessTime = (m._effectiveProcessTime !== undefined ? m._effectiveProcessTime : m.def.processTime);
                     if (m._hasEnergy) {
-                        if (m._isElectric) hasPower = (m.energy >= m._energyUsage);
+                        if (m._isElectric) hasPower = (m.energy >= effEnergy);
                         else hasPower = (m.inv[m._energyFuel] >= m._energyUsage);
                     }
 
-                    if (hasPower && m.timer >= m.def.processTime) {
+                    if (hasPower && m.timer >= effProcessTime) {
                         for (let r = 0; r < m._fastRecipes.length; r++) {
                             let fr = m._fastRecipes[r]; let canCraft = true;
 
-                            // Strict zero-allocation verification loop
                             for (let j = 0; j < fr.inReqs.length; j++) {
                                 if ((m.inv[fr.inReqs[j]] || 0) < fr.inAmts[j]) { canCraft = false; break; }
                             }
@@ -4837,7 +4985,7 @@ let p = Math.floor(progressRatio * 100);
                             if (canCraft) {
                                 m.timer = 0;
                                 for (let j = 0; j < fr.inReqs.length; j++) m.inv[fr.inReqs[j]] -= fr.inAmts[j];
-                                if (m._isElectric) m.energy -= m._energyUsage; else if (m._isBurner) m.inv[m._energyFuel] -= m._energyUsage;
+                                if (m._isElectric) { m.energy -= effEnergy; m._ocJustCrafted = true; } else if (m._isBurner) m.inv[m._energyFuel] -= m._energyUsage;
 
                                 for (let j = 0; j < fr.outKeys.length; j++) m.outBuffer[fr.outKeys[j]] = (m.outBuffer[fr.outKeys[j]] || 0) + fr.outAmts[j];
                                 if (fr.chanceItem && Math.random() < fr.chanceVal) m.outBuffer[fr.chanceItem] = (m.outBuffer[fr.chanceItem] || 0) + 1;
@@ -4856,6 +5004,68 @@ let p = Math.floor(progressRatio * 100);
                 if (m._outPorts.length > 0) m._outPorts.forEach(p => { for (let oi in m.outBuffer) { let a = processMachineBufferFast(m, { [oi]: m.outBuffer[oi] }, p.x, p.y); if (a > 0) m.outBuffer[oi] -= a; } });
                 if (m._out2Ports.length > 0 && m.out2Buffer) m._out2Ports.forEach(p => { for (let oi in m.out2Buffer) { let a = processMachineBufferFast(m, { [oi]: m.out2Buffer[oi] }, p.x, p.y); if (a > 0) m.out2Buffer[oi] -= a; } });
             }
+
+            // --- OVERCLOCK HEAT MANAGEMENT (ALL ELECTRIC MACHINES) ---
+            ocHeatTimer += dt;
+            if (ocHeatTimer >= 1.0) {
+                ocHeatTimer = 0;
+                for (let m of activeMachines) {
+                    if (!m || m.disabledByPLC || !m._isElectric || m.def.isOverclockBuff) continue;
+                    if (!m._compiled) precompileMachine(m);
+                    let wasWorking = false;
+                    if (m._isStandardWasm) {
+                        wasWorking = gameState.is_machine_working(m.id);
+                    } else {
+                        wasWorking = !!m._ocJustCrafted;
+                    }
+                    m._ocJustCrafted = false;
+                    if ((m._ocSpeed || 1) <= 1.0 && m._ocEnergyReduction <= 0) {
+                        m.overclockHeat = Math.max(0, (m.overclockHeat || 0) - 10);
+                        if (m.overclockHeat <= 0) delete m.overclockHeat;
+                        continue;
+                    }
+                    let isHeating = wasWorking || (m.overclockHeat > 0);
+                    if (!isHeating) {
+                        m.overclockHeat = Math.max(0, (m.overclockHeat || 0) - 5);
+                        if (m.overclockHeat <= 0) delete m.overclockHeat;
+                        continue;
+                    }
+                    m.overclockHeat = m.overclockHeat || 0;
+                    // Only generate heat when the machine is actively working
+                    if (wasWorking) {
+                        let heatGen = 8 * (m._ocSpeed - 1) * m._ocPower;
+                        m.overclockHeat += heatGen;
+                    }
+                    // Cooling applies regardless (water/N2 can be used to manage heat)
+                    if (m.inv && m.inv['water'] > 0 && m.overclockHeat > 200) {
+                        m.inv['water']--; if (!m.inv['water']) delete m.inv['water'];
+                        m.overclockHeat = Math.max(0, m.overclockHeat - 50);
+                    }
+                    if (m.inv && m.inv['liquid_n2'] > 0 && m.overclockHeat > 400) {
+                        m.inv['liquid_n2']--; if (!m.inv['liquid_n2']) delete m.inv['liquid_n2'];
+                        m.overclockHeat = Math.max(0, m.overclockHeat - 500);
+                    }
+                    // No passive cooling when overclocked — heat only goes down via coolants
+                    let maxHeat = 1000;
+                    if (m.overclockHeat >= maxHeat) {
+                        m.overclockHeat = 0;
+                        floatText(m.x, m.y, "OVERHEAT! Machine stopped!", "#f44336");
+                        m.disabledByPLC = true;
+                    } else if (m.overclockHeat > maxHeat * 0.85 && (m.overclockHeatWarnTimer || 0) <= 0) {
+                        m.overclockHeatWarnTimer = 5;
+                        floatText(m.x, m.y, "CRITICAL: Machine overheating!", "#ff9800");
+                    }
+                    if (m.overclockHeatWarnTimer) m.overclockHeatWarnTimer -= 1;
+                }
+            }
+
+        window.rescanOverclockDelimiter = function() {
+            if (!currentOpenMachine || !currentOpenMachine.def.isOverclockBuff) return;
+            let r = currentOpenMachine.def.rotations[currentOpenMachine.rotIndex];
+            invalidateOverclockNeighbors(currentOpenMachine.x, currentOpenMachine.y, r.w, r.h);
+            floatText(currentOpenMachine.x, currentOpenMachine.y, "Neighbors re-scanned!", "#ff9800");
+            updateMachineUI();
+        };
 
             function processMachineBufferFast(m, buffer, ox, oy) {
                 let totalPushed = 0;
@@ -5079,9 +5289,7 @@ let p = Math.floor(progressRatio * 100);
 if (m.disabledByPLC) {
     isWorking = false;
 } else if (m._isStandardWasm) {
-    let progressRatio = gameState.get_machine_timer(m.id);
-    // Standard machines only play animations if they have actively received ingredients
-    isWorking = m._hasIngredients && (progressRatio > 0.0 && progressRatio < 1.0);
+    isWorking = gameState.is_machine_working(m.id);
 } else if (m.def.isWorking) {
     isWorking = m.def.isWorking(m);
 } else if (m.def.recipes && m.def.recipes.length > 0) {
@@ -5114,11 +5322,23 @@ if (m.disabledByPLC) {
                         const sY = (m.y + y - player.y) * charHeight + (canvas.height / 2);
 
                         let charToDraw = r.art[y][x]; let colorToDraw = m.def.color;
-                        if (isWorking && m.def.renderAnim) {
-                            let anim = m.def.renderAnim(charToDraw, t, m); // 'm' is now passed here!
-                            if (anim) { charToDraw = anim.char || charToDraw; colorToDraw = anim.color || colorToDraw; }
+                        if (m.exploded) {
+                            let seed = m.id * 123.45 + (y * r.w + x) * 67.89;
+                            let isRed = (Math.abs(Math.sin(seed) * 10000) % 1) > 0.7;
+                            colorToDraw = isRed ? '#f44336' : '#555555';
+                        } else {
+                            if (isWorking && m.def.renderAnim) {
+                                let anim = m.def.renderAnim(charToDraw, t, m); // 'm' is now passed here!
+                                if (anim) { charToDraw = anim.char || charToDraw; colorToDraw = anim.color || colorToDraw; }
+                            }
                         }
                         pushQuad(charToDraw, sX, sY, colorToDraw, machineAlpha);
+                        if (m.overclockHeat && !m.exploded) {
+                            let heatRatio = Math.min(m.overclockHeat / 1000, 1);
+                            let alpha = heatRatio * 0.35;
+                            pushQuad(charToDraw, sX, sY, '#ff4400', alpha);
+                            if (heatRatio > 0.7) pushQuad(charToDraw, sX, sY, '#ff0000', (heatRatio - 0.7) * 0.5);
+                        }
                     }
                 }
                 let drawPort = (px, py, color) => {
@@ -5126,10 +5346,12 @@ if (m.disabledByPLC) {
                 };
 
                 // Ensure all extended ports are accurately rendered to the player
-                if (r.outX !== null && r.outY !== null) drawPort(r.outX, r.outY, '#e65000');
-                if (r.extraOuts) r.extraOuts.forEach(p => drawPort(p.x, p.y, '#e65000'));
-                if (r.out2X !== undefined && r.out2X !== null && r.out2Y !== null) drawPort(r.out2X, r.out2Y, '#03a9f4');
-                if (r.extraOut2s) r.extraOut2s.forEach(p => drawPort(p.x, p.y, '#03a9f4'));
+                if (!m.exploded) {
+                    if (r.outX !== null && r.outY !== null) drawPort(r.outX, r.outY, '#e65000');
+                    if (r.extraOuts) r.extraOuts.forEach(p => drawPort(p.x, p.y, '#e65000'));
+                    if (r.out2X !== undefined && r.out2X !== null && r.out2Y !== null) drawPort(r.out2X, r.out2Y, '#03a9f4');
+                    if (r.extraOut2s) r.extraOut2s.forEach(p => drawPort(p.x, p.y, '#03a9f4'));
+                }
             }
 
 

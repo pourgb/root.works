@@ -356,7 +356,11 @@ export const ITEM_COLORS = {
     'machine_nuclear_uhp_compressor': '#1a237e',
     'machine_powered_industrial_miner': '#b71c1c',
     'zinc_ingot': '#b2ebf2',
-    'zinc_ore': '#b2ebf2'
+    'zinc_ore': '#b2ebf2',
+    'power_delimiter_t1': '#ff9100',
+    'power_delimiter_t2': '#ff6d00',
+    'power_delimiter_t3': '#e65100',
+    'power_regulator': '#4fc3f7'
 };
 export const LOGISTICS_ITEMS = [
     { id: 'item_pipe', name: 'Item Pipe', net: 'item' }, { id: 'copper_wire', name: 'Copper Wire', net: 'wire' },
